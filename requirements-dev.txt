@@ -1,0 +1,7 @@
+# Local development and CI only. Not installed in the cloud.
+-r requirements.txt
+pytest~=9.2
+pytest-asyncio~=1.4
+pytest-cov~=7.1
+ruff~=0.17.3
+pip-audit~=2.10

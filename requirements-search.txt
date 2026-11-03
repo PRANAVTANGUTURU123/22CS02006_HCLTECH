@@ -1,0 +1,5 @@
+# Optional document search (backend/app/search). Install only if the brief needs PDFs/RAG.
+# chromadb is large (~200 MB with onnxruntime). If you deploy search, add these to requirements.txt.
+pypdf~=6.21
+chromadb~=1.5
+rank-bm25~=0.2.2
