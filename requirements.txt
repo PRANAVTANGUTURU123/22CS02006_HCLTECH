@@ -6,6 +6,7 @@ uvicorn~=0.54.0
 pydantic~=2.14
 pydantic-settings~=2.16
 SQLAlchemy~=2.1
+psycopg[binary]~=3.3
 httpx~=0.28.1
 tenacity~=9.2
 structlog~=26.1
