@@ -22,6 +22,15 @@ class Settings(BaseSettings):
     environment: str = "local"
     log_level: str = "INFO"
 
+    # Sent-notification ids. SQLite file by default; PostgreSQL in the cloud.
+    database_url: str = f"sqlite:///{(PROJECT_ROOT / 'data' / 'app.db').as_posix()}"
+    # Readings loaded at startup.
+    readings_path: Path = PROJECT_ROOT / "starter_kit" / "data" / "sensor_readings.json"
+    max_upload_readings: int = Field(default=5000, gt=0, le=50000)
+    max_upload_bytes: int = Field(default=2_000_000, gt=0)
+    cors_origins: list[str] = Field(default_factory=list)
+    frontend_dist: Path = PROJECT_ROOT / "frontend" / "dist"
+
     # Discord / Slack incoming webhook. Empty = print notifications to the console instead.
     alert_webhook_url: SecretStr | None = None
     webhook_timeout_seconds: float = Field(default=5.0, gt=0, le=30)

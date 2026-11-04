@@ -13,6 +13,13 @@
         "--output-dir",
         ".playwright-mcp"
       ]
+    },
+    "cold-chain": {
+      "command": ".venv/Scripts/python.exe",
+      "args": [
+        "-m",
+        "backend.mcp_server"
+      ]
     }
   }
 }

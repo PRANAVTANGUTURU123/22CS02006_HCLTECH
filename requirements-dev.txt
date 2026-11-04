@@ -6,3 +6,5 @@ pytest-cov~=7.1
 pytest-playwright~=0.10.0
 ruff~=0.17.3
 pip-audit~=2.10
+# Local MCP server (backend/mcp_server.py); not needed in the cloud.
+mcp~=1.30
