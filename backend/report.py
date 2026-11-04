@@ -4,6 +4,7 @@ Shared by the CLI (--json), the API and the MCP server so they always agree.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
@@ -93,6 +94,10 @@ def truck_to_dict(t: TruckResult) -> dict[str, Any]:
         "last_temperature_c": last.temperature_c if last else None,
         "last_humidity_pct": last.humidity_pct if last else None,
         "open_alert_id": open_alert.alert_id if open_alert else None,
+        "profile": t.config.profile,
+        "min_safe_c": t.config.min_safe_c,
+        "max_safe_c": t.config.max_safe_c,
+        "alert_after_min": t.config.alert_after_min,
         "alert_count": len(t.alerts),
         "short_episodes": [short_episode_to_dict(e) for e in t.short_episodes],
     }
@@ -128,6 +133,7 @@ def evaluate_raw(
     raw_readings: list[Any],
     config: AlertConfig = DEFAULT_CONFIG,
     now: datetime | None = None,
+    config_for: Callable[[str], AlertConfig] | None = None,
 ) -> FleetReport:
     """Clean, sort and evaluate raw readings in one step."""
-    return evaluate_fleet(clean_readings(raw_readings, config), config, now)
+    return evaluate_fleet(clean_readings(raw_readings, config), config, now, config_for)

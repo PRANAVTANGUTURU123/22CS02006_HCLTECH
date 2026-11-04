@@ -22,7 +22,7 @@ Result: 3 alerts, 3 notifications in total, and a reason for every truck, includ
 
 Full list with reasons: `docs/ASSUMPTIONS.md`. All numbers live in one config file (`backend/engine/config.py`).
 
-- **Safe range 2–8 °C** for the whole fleet (the standard range for refrigerated medicines, Nimbus's strictest cargo; every reading fits it). Above 8.0 or below 2.0 is out of range; exactly 8.0 is fine. There's no cargo-type field, so every truck gets the strictest profile and per-cargo ranges are future work.
+- **Safe range 2–8 °C** for the whole fleet (the standard range for refrigerated medicines, Nimbus's strictest cargo; every reading fits it). Above 8.0 or below 2.0 is out of range; exactly 8.0 is fine. There's no cargo-type field, so **every truck defaults to the strictest profile**. Ranges are not hard-coded: ops assign each truck a **cargo profile** from the dashboard (presets `pharma` 2–8, `chilled` 0–5, `frozen` −25 to −18, `ambient` 15–25 °C, or their own). A truck with no assignment, including a brand-new one, automatically uses the default, so it is never unprotected. Profiles and assignments are stored in the database, changes need the admin key, and the fleet is re-evaluated immediately.
 - **Time comes from the sensor timestamp**, not from when we received the reading. Timestamps without a zone are treated as UTC.
 - **Alert after 20 minutes out of range** (the same for every truck in v1). On the seed data any limit from 10 to 20 min gives the right answer: 5 min alerts on T-04's early blip, and 25 min misses T-04. I picked 20, the most patient value that is still correct. It ignores door openings and defrost cycles (5–15 min), still has 3 real readings if one is missing, and leaves ops time to act before pharma cargo spoils.
 - **Escalate to Critical after 60 minutes out of range, or 3 °C or more out of range (≥ 11 °C).** A truck still out of range after an hour means the first alert didn't get the problem fixed, so it goes further up. A truck that hot is probably a failed reefer unit, so it doesn't wait for the hour: it still needs the 20 minutes (one hot reading could be a glitch), then opens straight as Critical.
@@ -130,7 +130,7 @@ There are three channels, each with one job:
 
 ## 10. With more time, data or budget
 
-- **Cargo profiles:** per-shipment ranges and alert times (frozen −25 to −18 °C, chilled 0–5 °C, pharma 2–8 °C), with an optional humidity limit; unlisted trucks keep the strictest profile.
+- **Cargo profiles per shipment:** today profiles are set per truck by ops. Ideally the range would come with each shipment from Nimbus's dispatch system, plus an optional humidity limit.
 - **Sensor-fault notification:** today impossible readings are flagged and ignored, but nobody is notified, and a truck sending *only* faulty readings drops out of the report. Fix: a "sensor fault" status with one notification after 15 min of bad readings.
 - Streaming ingestion (Pub/Sub) instead of file upload; late-data handling as in §4; on-call escalation (who gets an update if nobody fixes the truck).
 - "Trending warm" early warning (T-03's slow climb), and door-open or defrost signals from the truck to explain blips.

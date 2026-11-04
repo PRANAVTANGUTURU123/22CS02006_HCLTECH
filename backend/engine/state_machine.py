@@ -19,6 +19,7 @@ Rules (reasons in docs/ASSUMPTIONS.md):
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
@@ -68,6 +69,7 @@ class TruckResult:
     silences: list[Silence]
     notifications: list[Notification]
     short_episodes: list[ShortEpisode]  # out of range, but not long enough to alert
+    config: AlertConfig = DEFAULT_CONFIG  # the profile this truck was checked against
 
     @property
     def open_alert(self) -> Alert | None:
@@ -327,6 +329,7 @@ def evaluate_truck(
         silent_now=silent_now,
         alerts=alerts,
         short_episodes=short_episodes,
+        config=config,
         silences=silences,
         notifications=notifications,
     )
@@ -336,16 +339,20 @@ def evaluate_fleet(
     clean: CleanData,
     config: AlertConfig = DEFAULT_CONFIG,
     now: datetime | None = None,
+    config_for: Callable[[str], AlertConfig] | None = None,
 ) -> FleetReport:
     """Evaluate every truck.
 
     `now` is the wall clock in live use. For a batch file it defaults to the latest
     timestamp in the data, so a truck counts as silent only relative to the rest of
-    the fleet.
+    the fleet. `config_for(truck_id)` gives each truck its own cargo profile; without
+    it (or for a truck it doesn't know) every truck uses `config`.
     """
     evaluated_at = now if now is not None else clean.latest_timestamp()
     trucks = [
-        evaluate_truck(truck_id, readings, config, evaluated_at)
+        evaluate_truck(
+            truck_id, readings, config_for(truck_id) if config_for else config, evaluated_at
+        )
         for truck_id, readings in clean.by_truck.items()
     ]
     return FleetReport(evaluated_at=evaluated_at, trucks=trucks, clean=clean)

@@ -1,4 +1,5 @@
 """HTTP API over the engine. The server entry point is backend/main.py."""
+
 from __future__ import annotations
 
 import hmac
@@ -15,6 +16,7 @@ from pydantic import BaseModel, Field
 from backend.ai import Summarizer, facts_by_notification, llm_from_settings
 from backend.engine import DEFAULT_CONFIG, AlertConfig, FleetReport, load_raw_file
 from backend.notify import Sender, SentStore, dispatch, sender_from_settings
+from backend.profiles import ProfileStore
 from backend.report import (
     alert_to_dict,
     evaluate_raw,
@@ -35,12 +37,25 @@ class ReadingsUpload(BaseModel):
     replace: bool = False  # true = start over with only these readings
 
 
+class ProfileIn(BaseModel):
+    min_safe_c: float = Field(ge=-60, le=60)
+    max_safe_c: float = Field(ge=-60, le=60)
+    alert_after_min: float = Field(default=20, gt=0, le=1440)
+
+
+class AssignIn(BaseModel):
+    profile: str = Field(min_length=1, max_length=32)
+
+
 class Fleet:
     """Current readings, the latest report and AI summaries. Thread-safe."""
 
-    def __init__(self, raw: list[Any], config: AlertConfig, summarizer_llm) -> None:
+    def __init__(
+        self, raw: list[Any], config: AlertConfig, summarizer_llm, config_for=None
+    ) -> None:
         self._lock = threading.Lock()
         self._config = config
+        self._config_for = config_for
         self._llm = summarizer_llm
         self._summarizer: Summarizer | None = None
         self.raw: list[Any] = []
@@ -49,7 +64,7 @@ class Fleet:
         self.replace(raw)
 
     def _refresh(self) -> None:
-        self.report = evaluate_raw(self.raw, self._config)
+        self.report = evaluate_raw(self.raw, self._config, config_for=self._config_for)
         facts = facts_by_notification(self.report)
         old_cache = self._summarizer._cache if self._summarizer else {}
         self._summarizer = Summarizer(self._llm, facts)
@@ -66,6 +81,11 @@ class Fleet:
             self.raw.extend(raw)
             self._refresh()
 
+    def refresh(self) -> None:
+        """Re-evaluate after a profile change."""
+        with self._lock:
+            self._refresh()
+
     def summary_for(self, notification) -> str | None:
         return self.summaries.get(notification.notification_id)
 
@@ -75,18 +95,27 @@ def create_app(
     sender: Sender | None = None,
     store: SentStore | None = None,
     llm=None,
+    profiles: ProfileStore | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     sender = sender or sender_from_settings(settings)
-    store = store or SqlSentStore(make_engine(settings.database_url))
+    db = (
+        make_engine(settings.database_url.get_secret_value())
+        if store is None or profiles is None
+        else None
+    )
+    store = store or SqlSentStore(db)
+    profiles = profiles or ProfileStore(db, settings.default_profile)
     llm = llm or llm_from_settings(settings)
-    fleet = Fleet(load_raw_file(settings.readings_path), DEFAULT_CONFIG, llm)
+    fleet = Fleet(load_raw_file(settings.readings_path), DEFAULT_CONFIG, llm, profiles.config_for)
 
     app = FastAPI(title="Cold-Chain Alerting", version="1.0.0")
     app.state.fleet = fleet
     if settings.cors_origins:
         app.add_middleware(
-            CORSMiddleware, allow_origins=settings.cors_origins, allow_methods=["GET", "POST"]
+            CORSMiddleware,
+            allow_origins=settings.cors_origins,
+            allow_methods=["GET", "POST", "PUT"],
         )
 
     admin_key = (
@@ -172,6 +201,43 @@ def create_app(
             "sent": [r.notification_id for r in results if r.status == "sent"],
             "failed": [r.notification_id for r in results if r.status == "failed"],
         }
+
+    def profiles_view() -> dict[str, Any]:
+        return {
+            "default": profiles.default_profile,
+            "profiles": [
+                {
+                    "name": name,
+                    "min_safe_c": cfg.min_safe_c,
+                    "max_safe_c": cfg.max_safe_c,
+                    "alert_after_min": cfg.alert_after_min,
+                }
+                for name, cfg in sorted(profiles.profiles().items())
+            ],
+            "assignments": profiles.assignments(),
+        }
+
+    @app.get("/api/profiles")
+    def get_profiles() -> dict[str, Any]:
+        return profiles_view()
+
+    @app.put("/api/profiles/{name}", dependencies=[Depends(require_key)])
+    def put_profile(name: str, body: ProfileIn) -> dict[str, Any]:
+        try:
+            profiles.upsert_profile(name, body.min_safe_c, body.max_safe_c, body.alert_after_min)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
+        fleet.refresh()
+        return profiles_view()
+
+    @app.put("/api/trucks/{truck_id}/profile", dependencies=[Depends(require_key)])
+    def put_truck_profile(truck_id: str, body: AssignIn) -> dict[str, Any]:
+        try:
+            profiles.assign(truck_id, body.profile)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
+        fleet.refresh()
+        return profiles_view()
 
     @app.post("/api/reset", dependencies=[Depends(require_key)])
     def reset() -> dict[str, int]:

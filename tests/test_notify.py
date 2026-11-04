@@ -202,8 +202,13 @@ def test_blank_webhook_means_console():
 
 
 def test_webhook_url_is_secret_and_https_only():
-    settings = Settings(_env_file=None, alert_webhook_url=SECRET_URL)
-    assert "secret" not in repr(settings)
+    settings = Settings(
+        _env_file=None,
+        alert_webhook_url=SECRET_URL,
+        database_url="postgresql+psycopg://appuser:db-pass-123@host/appdb",
+    )
+    assert "very-secret-token" not in repr(settings)
+    assert "db-pass-123" not in repr(settings)
     assert isinstance(sender_from_settings(settings), WebhookSender)
     with pytest.raises(ValidationError):
         Settings(_env_file=None, alert_webhook_url="http://insecure.example/hook")

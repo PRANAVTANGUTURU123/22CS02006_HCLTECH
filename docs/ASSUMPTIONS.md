@@ -20,7 +20,7 @@ Working list of every assumption behind the alerting rules. Each one says what I
 |---|---|---|
 | T1 | The safe range is **2–8 °C** for every truck. A reading is out of range if it is **above 8.0** or **below 2.0**. Exactly 8.0 is in range. | 2–8 °C is the standard range for refrigerated medicines, the strictest of Nimbus's cargo. Every reading in the seed data fits this profile. There's no cargo-type field, so one fleet-wide range is the honest default. |
 | T2 | Below 2 °C counts as out of range too. | Freezing ruins vaccines and fresh food just as heat does. No seed reading goes below 2 °C, so this has no effect on the results here. |
-| T3 | All thresholds live in one config file, not in the code. | Different cargo (frozen at −18 °C, produce at 0–5 °C) will need different numbers. Per-truck cargo profiles are future work. |
+| T3 | Defaults live in one config file (`backend/engine/config.py`). Each truck's range comes from its **cargo profile**, which ops set from the dashboard (stored in the database, admin key needed). A truck with no profile, e.g. a new truck, uses the default `pharma` 2–8 °C. | Different cargo (frozen at −18 °C, produce at 0–5 °C) needs different numbers, and ops shouldn't need a developer to change them. Defaulting to the strictest range means a new or forgotten truck is over-protected rather than unprotected. |
 
 ## 3. "Too long", gaps and repeat alerts
 

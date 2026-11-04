@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchReport, fetchTruck, hhmm } from "./api";
+import { CargoRanges } from "./CargoRanges";
 import { TempChart } from "./TempChart";
 import type { Alert, Report, TruckDetail } from "./types";
 
@@ -92,7 +93,8 @@ export default function App() {
         <div>
           <h1>Cold-chain alerts</h1>
           <p className="muted">
-            Nimbus Freight · safe {min}–{max} °C · alert after {alert_after_min} min out of range ·
+            Nimbus Freight · default range {min}–{max} °C · alert after {alert_after_min} min out of
+            range ·
             data as of {hhmm(report.evaluated_at)} UTC · refreshes every 20 s
           </p>
         </div>
@@ -113,11 +115,12 @@ export default function App() {
 
       <section>
         <h2>Fleet</h2>
-        <table>
+        <table className="fleet">
           <thead>
             <tr>
               <th>Truck</th>
               <th>State</th>
+              <th>Range</th>
               <th>Last reading</th>
               <th>Humidity</th>
               <th>Alerts</th>
@@ -136,6 +139,9 @@ export default function App() {
                   {t.silent && <span className="badge silent">Sensor silent</span>}
                 </td>
                 <td>
+                  {t.profile} <span className="muted">{t.min_safe_c} to {t.max_safe_c} °C</span>
+                </td>
+                <td>
                   {t.last_temperature_c?.toFixed(1) ?? "–"} °C at {hhmm(t.last_reading_at)}
                 </td>
                 <td>{t.last_humidity_pct ?? "–"} %</td>
@@ -149,8 +155,13 @@ export default function App() {
 
       {detail && (
         <section>
-          <h2>{detail.truck_id} temperature</h2>
-          <TempChart truck={detail} min={min} max={max} />
+          <h2>
+            {detail.truck_id} temperature{" "}
+            <span className="muted small">
+              ({detail.profile}: {detail.min_safe_c} to {detail.max_safe_c} °C)
+            </span>
+          </h2>
+          <TempChart truck={detail} min={detail.min_safe_c} max={detail.max_safe_c} />
           <p className="muted small">Green band = safe range. Red shading = alert period.</p>
         </section>
       )}
@@ -167,6 +178,8 @@ export default function App() {
           </ul>
         )}
       </section>
+
+      <CargoRanges trucks={report.trucks} onChanged={() => void load()} />
 
       <section>
         <h2>Notifications sent to ops ({report.notifications.length})</h2>

@@ -1,6 +1,6 @@
 # Testing & Verification
 
-**183 automated tests**: 178 Python (97% line coverage), 3 frontend and 2 end-to-end browser tests. On top of those, static checks, dependency audits and live checks against the real Discord and Groq. **No automated test touches the network:** `tests/conftest.py` forces the webhook off and the LLM to mock mode, even if `.env` holds real keys.
+**201 automated tests**: 194 Python (97% line coverage), 5 frontend and 2 end-to-end browser tests. On top of those, static checks, dependency audits and live checks against the real Discord and Groq. **No automated test touches the network:** `tests/conftest.py` forces the webhook off and the LLM to mock mode, even if `.env` holds real keys.
 
 ## How to run
 
@@ -65,6 +65,13 @@ cd frontend; npm run typecheck; npm test; npm run build; cd ..       # types, UI
   - The history window is capped (0, −5 and 1441 minutes are refused); an unknown truck is refused, including an SQL-injection-style string.
 - **`frontend/src/App.test.tsx` (3):** the dashboard component with the API mocked. It checks the banner, state badges, reasons, the **labelled AI summary**, the chart on click, and the error message when the API is down.
 
+### Cargo profiles (`test_profiles.py`, 16: unit + integration)
+- Presets are added on first start; **a never-seen truck gets the default `pharma` 2–8 °C**; assign and unassign; custom profiles; settings survive a restart.
+- Refused: a bad name, min above max, a range outside the sensor limits, a zero alert time, an unknown profile, an over-long truck id.
+- The same −10 °C reading is "too warm" for frozen and "too cold" for pharma.
+- Through the API: assigning T-03 to `chilled` immediately creates an "Above 5 °C" alert; widening `pharma` to 9.7 °C clears all alerts; writes without the key get 401; bad input gets 422.
+- UI tests: the panel lists profiles with the default marked, sends the admin key in the header, and shows "Wrong or missing admin key" on a 401.
+
 ### End-to-end tests (2)
 
 `tests_e2e/test_dashboard.py` starts the **real server** (real database, built dashboard) and drives **Chrome**:
@@ -95,6 +102,7 @@ cd frontend; npm run typecheck; npm test; npm run build; cd ..       # types, UI
 2. **Gap timing:** after a data gap, a late "is it improving?" check was followed by another only 5 min later → the next check is now a full 10 min after the actual one.
 3. **Secret leak:** httpx logged the full webhook URL, which contains the token → its logger is held at WARNING.
 4. **Test isolation:** importing the API module built the app with the developer's real `.env` (live Groq calls) → app creation moved to `backend/main.py`.
+5. **Database password in `repr`:** the settings object printed the full `DATABASE_URL`, password included → it is now a secret value too.
 
 ## Not covered yet
 

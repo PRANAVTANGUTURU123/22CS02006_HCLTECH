@@ -1,4 +1,5 @@
 """Runtime settings from environment variables / .env. Secrets stay SecretStr."""
+
 from __future__ import annotations
 
 from functools import lru_cache
@@ -23,7 +24,12 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     # Sent-notification ids. SQLite file by default; PostgreSQL in the cloud.
-    database_url: str = f"sqlite:///{(PROJECT_ROOT / 'data' / 'app.db').as_posix()}"
+    # SecretStr: a PostgreSQL URL contains the password, so it must never show in logs/repr.
+    database_url: SecretStr = SecretStr(
+        f"sqlite:///{(PROJECT_ROOT / 'data' / 'app.db').as_posix()}"
+    )
+    # Cargo profile used by any truck without its own assignment (e.g. a new truck).
+    default_profile: str = "pharma"
     # Readings loaded at startup.
     readings_path: Path = PROJECT_ROOT / "starter_kit" / "data" / "sensor_readings.json"
     max_upload_readings: int = Field(default=5000, gt=0, le=50000)

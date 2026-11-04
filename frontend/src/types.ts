@@ -21,6 +21,10 @@ export interface Truck {
   last_temperature_c: number | null;
   last_humidity_pct: number | null;
   open_alert_id: string | null;
+  profile: string;
+  min_safe_c: number;
+  max_safe_c: number;
+  alert_after_min: number;
   alert_count: number;
   short_episodes: ShortEpisode[];
 }
@@ -74,4 +78,17 @@ export interface Report {
 export interface TruckDetail extends Truck {
   readings: { timestamp: string; temperature_c: number; humidity_pct: number | null }[];
   alerts: Alert[];
+}
+
+export interface Profile {
+  name: string;
+  min_safe_c: number;
+  max_safe_c: number;
+  alert_after_min: number;
+}
+
+export interface Profiles {
+  default: string;
+  profiles: Profile[];
+  assignments: Record<string, string>;
 }

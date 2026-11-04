@@ -10,6 +10,8 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True, slots=True)
 class AlertConfig:
+    # Cargo profile this config belongs to (per-truck ranges: backend/profiles.py).
+    profile: str = "pharma"
     # Safe range for the cargo (2-8 °C: refrigerated pharma, the strictest Nimbus cargo).
     min_safe_c: float = 2.0
     max_safe_c: float = 8.0

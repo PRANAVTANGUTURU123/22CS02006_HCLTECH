@@ -40,7 +40,7 @@ def server(tmp_path_factory):
     db = tmp_path_factory.mktemp("db") / "app.db"
     sender = FakeSender()
     app = create_app(
-        Settings(_env_file=None, frontend_dist=DIST),
+        Settings(_env_file=None, frontend_dist=DIST, database_url=f"sqlite:///{db.as_posix()}"),
         sender=sender,
         store=SqlSentStore(make_engine(f"sqlite:///{db.as_posix()}")),
         llm=MockLLM(),
@@ -67,7 +67,7 @@ def test_dashboard_shows_seed_alerts_and_chart(server, page):
     assert "1 open alert: T-04 (recovering, peak 9.1 °C)" in page.get_by_role("alert").inner_text()
     assert page.locator(".alert-card").count() == 3
     assert page.locator(".ai-label").count() == 3
-    page.locator("tbody tr", has_text="T-04").click()
+    page.locator("table.fleet tbody tr", has_text="T-04").click()
     page.get_by_role("img", name="Temperature chart for T-04").wait_for()
     assert page.locator("svg .alert-span").count() == 1
 
@@ -85,7 +85,7 @@ def test_upload_to_alert_to_notification_to_screen(server, page):
     assert len(t09) == 1 and t09[0]["ai_summary"] is True  # one push, AI-worded
 
     page.goto(base)
-    row = page.locator("tbody tr", has_text="T-09")
+    row = page.locator("table.fleet tbody tr", has_text="T-09")
     row.wait_for()
     assert "Alert" in row.inner_text()
     assert "T-09" in page.get_by_role("alert").inner_text()

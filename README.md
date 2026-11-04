@@ -93,8 +93,15 @@ cd frontend; npm install; npm run build; cd ..
 | `GET /api/alerts?status=open\|recovering\|closed` | Alerts with reasons |
 | `POST /api/readings` | Upload `{"readings": [...], "replace": false}`. Re-evaluates and pushes new notifications once. Max 5,000 readings / 2 MB. |
 | `POST /api/reset` | Reload the seed data (demo) |
+| `GET /api/profiles`, `PUT /api/profiles/{name}`, `PUT /api/trucks/{id}/profile` | Cargo ranges per truck (writes need `X-API-Key`) |
 
 Sent notification ids are stored through SQLAlchemy (PostgreSQL via `DATABASE_URL`, otherwise a local SQLite file), so a restart never resends. The page refreshes every 20 s and shows a banner (and an optional desktop popup) when a new alert arrives.
+
+### Cargo ranges per truck (no code changes)
+
+The dashboard's **Cargo ranges** panel lists the profiles (`pharma` 2–8 °C is the default, `chilled` 0–5, `frozen` −25 to −18, `ambient` 15–25) and which trucks use each one. With the admin key, ops can **assign a truck to a profile** or **add or edit a profile**, and the fleet is re-evaluated immediately. A truck with no assignment, including a brand-new truck, uses the default. Through the API: `GET /api/profiles`, `PUT /api/trucks/{id}/profile`, `PUT /api/profiles/{name}` (with an `X-API-Key` header).
+
+Example: assign T-03 (5.8–7.0 °C) to `chilled` and it alerts ("Above 5 °C…"), because that temperature is fine for medicine but too warm for chilled food.
 
 ### Ask an AI assistant (MCP)
 
@@ -102,7 +109,7 @@ Sent notification ids are stored through SQLAlchemy (PostgreSQL via `DATABASE_UR
 
 ## Tests
 
-**183 automated tests:** 133 unit, 48 integration (including 3 frontend) and 2 end-to-end in real Chrome. 97% Python coverage, plus live checks against Discord and Groq. Details, and what each level proves: **[docs/TESTING.md](docs/TESTING.md)**.
+**201 automated tests:** 194 Python (unit + integration), 5 frontend and 2 end-to-end in real Chrome. 97% Python coverage, plus live checks against Discord and Groq. Details, and what each level proves: **[docs/TESTING.md](docs/TESTING.md)**.
 
 ```powershell
 .\.venv\Scripts\python -m pytest                       # unit + integration
@@ -111,7 +118,7 @@ cd frontend; npm run typecheck; npm test; cd ..        # UI
 .\.venv\Scripts\ruff check .; .\.venv\Scripts\pip-audit -r requirements.txt
 ```
 
-Tests never make real network calls: the webhook is forced off and the LLM to mock. They caught 4 real bugs, including the HTTP library logging the secret webhook URL.
+Tests never make real network calls: the webhook is forced off and the LLM to mock. They caught 5 real bugs, including the HTTP library logging the secret webhook URL and the settings object printing the database password.
 
 ## Project layout
 
@@ -133,7 +140,7 @@ docs/             assumptions, testing, screenshots
 - **Batch, not streaming:** v1 evaluates a whole file. Live ingestion with late-data handling is designed (SOLUTION_DESIGN.md §4) but not built.
 - **The API keeps readings in memory** (the send-once ids are in the database). A restart reloads the seed file, and a multi-instance deployment would need readings in the database too.
 - **CLI `--send` remembers sent ids only for that run** (the API uses the database).
-- **One profile for the whole fleet (2–8 °C):** the data has no cargo type. Per-cargo profiles are future work.
+- **Cargo profiles are per truck, set by ops**, not per shipment from a dispatch system.
 - **Sensor-fault readings** (< −40 / > 50 °C) are flagged and ignored but don't notify anyone yet.
-- **No login on the dashboard or API.** Fine for a local demo; a real deployment needs authentication (e.g. Cloud Run IAM or an identity proxy).
+- **Viewing is open; changes need the admin key** (`X-API-Key`). There are no per-user logins yet; a real deployment would add SSO (e.g. an identity proxy in front of Cloud Run).
 - The MCP server reads the seed file, not readings uploaded to the running API.

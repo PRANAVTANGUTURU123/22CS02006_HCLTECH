@@ -59,3 +59,9 @@ svg .temp { fill: none; stroke: var(--text); stroke-width: 2; }
 svg .dot { fill: var(--text); }
 svg .dot.out { fill: var(--alert); }
 svg .axis { font-size: 11px; fill: var(--muted); }
+.forms { display: grid; gap: 12px; margin-top: 12px; }
+fieldset { border: 1px solid var(--line); border-radius: 8px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+input, select { border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font: inherit; max-width: 100%; }
+input[type="number"] { width: 110px; }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+.ok-text { color: var(--ok); }
