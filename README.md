@@ -1,73 +1,89 @@
-# Cold-Chain Alerting Engine — Nimbus Freight
+# Cold-Chain Alerting Engine
 
-Alerts the ops team **once per real, sustained temperature problem on a truck**: not on every warm reading, not on brief blips, and not over and over for the same problem. It stays correct when readings go missing or arrive out of order.
+Nimbus Freight's ops team gets an alert for every warm reading, so they ignore them and miss real failures. This engine sends **one alert per real, sustained temperature problem on a truck**: no alerts for brief blips, no repeats for the same problem, and correct even when readings are missing or arrive out of order.
 
-- **Design document:** `SOLUTION_DESIGN.pdf` (problem, assumptions, design, trade-offs, next steps, testing, screenshots). Markdown sources: `SOLUTION_DESIGN.md`, `docs/ASSUMPTIONS.md`, `docs/TESTING.md` on GitHub.
-- **Live:** https://cold-chain-alerts-78623167451.asia-south1.run.app (Cloud Run; reads are open, changes need an admin key)
+- **Live app:** https://cold-chain-alerts-78623167451.asia-south1.run.app
 - **Code:** https://github.com/PRANAVTANGUTURU123/22CS02006_HCLTECH
+- **Design:** [SOLUTION_DESIGN.md](SOLUTION_DESIGN.md)
 
-## What I built
-
-- **Rules engine** (pure Python): cleans and sorts readings, then runs one state machine per truck: OK → SUSPECT → ALERT → RECOVERING → OK. It alerts after **20 min out of 2–8 °C** (by sensor timestamps), closes after **10 min back in range**, bridges gaps up to 15 min, and flags silent sensors.
-- **CLI report:** "what I'd alert on, and why", including why the other trucks did *not* alert.
-- **Webhook notifier** (Discord/Slack): each alert is sent **once** (fixed ids, stored in the database), with a 5 s timeout and 3 retries.
-- **AI summary (bonus):** an LLM words the alert in one line; the rules decide. Every number it writes is checked, and if it fails the plain message is sent.
-- **FastAPI API + React dashboard**, deployed on **Google Cloud Run**, plus a read-only **MCP server** so an AI assistant can answer "which trucks are in trouble?".
-
-## Requirement → where it is
-
-| Requirement (brief) | Where |
-|---|---|
-| Alert only on a sustained issue, per truck | `backend/engine/state_machine.py`, thresholds in `backend/engine/config.py` |
-| Ignore brief blips | `state_machine.py` (SUSPECT resets after 10 min in range); `tests/test_state_machine.py` |
-| Don't re-alert the same ongoing issue | Fixed notification ids: `state_machine.py`, `backend/notify/dispatcher.py`, `backend/store.py` |
-| Handle gaps in data | `state_machine.py` (gap bridging, "sensor silent") |
-| Handle out-of-order data and duplicates | `backend/engine/loader.py` (validate, dedupe, sort by sensor time) |
-| Runs end-to-end, prints "what I'd alert on, and why" | `backend/cli.py`, `backend/report.py` |
-| Assumptions documented | `SOLUTION_DESIGN.pdf` §3 and appendix A |
-| Bonus: LLM one-line summary | `backend/ai/summarizer.py`, `backend/ai/llm.py` |
-| Security (admin key, size limits, secrets) | `backend/api.py`, `backend/settings.py` |
-| Tests | `tests/` (212), `frontend/src/App.test.tsx` (7), `tests_e2e/` (2) |
-
-**Key files, in reading order:** `backend/engine/state_machine.py`, `backend/engine/loader.py`, `backend/engine/config.py`, `backend/engine/models.py`, `backend/report.py`, `backend/cli.py`, `backend/notify/dispatcher.py`, `backend/ai/summarizer.py`, `backend/api.py`, `backend/mcp_server.py`, `tests/test_state_machine.py`, `tests/test_seed_data.py`.
-
-## Run and test (quick)
-
-```powershell
-python -m venv .venv; .\.venv\Scripts\python -m pip install -r requirements-dev.txt
-.\.venv\Scripts\python -m backend.cli
-.\.venv\Scripts\python -m backend.cli --alert-after-min 25
-.\.venv\Scripts\python -m pytest
-```
-No keys are needed: without `.env`, alerts print to the console and the AI uses mock mode.
-
-## Trade-offs and gaps
-
-- **Duration-based state machine** over a rolling average (hides spikes, still flaps) or ML (54 readings isn't enough, and ops can't see *why*). The cost: an alert can't fire before 20 min.
-- **20 min, not 25:** T-04 is out of range for exactly 20 min, so 25 would miss a real failure. It's one config value.
-- **Not built:** streaming ingestion and late-data handling (designed only), sensor-fault notifications, per-user logins, ranges per shipment. Readings live in memory in the API (sent ids are in the database). The cloud runs Python 3.13; tests were run on 3.12.
-
-## What it decides on the seed data
+## Result on the seed data
 
 | Truck | What happens | Result |
 |---|---|---|
 | T-01 | Above 8 °C 08:10–08:40, peak 9.6 °C | **Alert** at 08:30, closed at 08:50 |
-| T-02 | One reading of 8.9 °C | No alert: a single-reading blip |
-| T-03 | Climbs to 7.0 °C | No alert: never out of range |
-| T-04 | Above 8 °C 08:25–08:45, **08:35 reading missing** | **Alert** at 08:45 (20 min by timestamps); the starter code missed it |
-| T-05 | Same as T-01 but **shuffled in the file** | **Alert** at 08:30 after sorting; the starter code missed it |
+| T-02 | One reading of 8.9 °C | No alert (blip) |
+| T-03 | Climbs to 7.0 °C, never above 8 | No alert |
+| T-04 | Above 8 °C 08:25–08:45, 08:35 reading missing | **Alert** at 08:45 |
+| T-05 | Same as T-01, shuffled in the file | **Alert** at 08:30, after sorting |
 
-Three alerts, three notifications, and a stated reason for every truck, including why T-02 and T-03 did *not* alert.
+21 warm readings → **3 alerts**.
 
-## Demo commands (tested)
+## How it works
 
-Run from the project folder in PowerShell. Expected results are shown under each command.
+1. **Loader:** validates every reading, drops duplicates and sorts each truck's readings by sensor time.
+2. **State machine per truck:** OK → SUSPECT → ALERT → RECOVERING → OK. Alert after **20 min** outside **2–8 °C**; back to normal after **10 min** in range; gaps up to 15 min are bridged and reported.
+3. **Notifications:** each alert is sent **once** to Discord; an update only if the temperature isn't improving; Critical at 60 min or ≥ 11 °C.
+4. **AI (bonus):** Groq writes each alert in plain words, and the **Ask about the fleet** box answers questions through our **MCP server**. The rules decide; the AI only explains, and every number it writes is checked.
 
-### 1. The 3 alerts we expect (seed data)
+---
+
+## Demo on Google Cloud
+
+Open https://cold-chain-alerts-78623167451.asia-south1.run.app
+
+1. **Fleet:** T-04 shows **Recovering**; the others are **OK**. The red banner names the open alert.
+2. **Chart:** click **T-04** for its temperature chart: green band = safe range, red = alert period, with the 08:30–08:40 data gap.
+3. **Alerts:** each card shows the reason and the AI summary.
+4. **Change a truck's range:** in **Truck ranges**, click **T-03**, enter min `0` and max `5`, enter the admin key, click **Save range**. A new alert appears: **T-03 "Above 5 °C for 50 min (08:00–08:50), peak 7 °C."** Click **Use default** to undo.
+
+The same data from PowerShell:
+
+```powershell
+$U = "https://cold-chain-alerts-78623167451.asia-south1.run.app"
+Invoke-RestMethod "$U/health"
+Invoke-RestMethod "$U/api/trucks" | Select-Object truck_id, state, last_temperature_c | Format-Table
+Invoke-RestMethod "$U/api/alerts" | Select-Object truck_id, status, reason | Format-Table -Wrap
+Invoke-RestMethod "$U/api/alerts?status=recovering" | Select-Object truck_id, reason | Format-Table -Wrap
+```
+
+Expected: `status ok`; T-04 **recovering**, T-01 and T-05 **closed**, each with its reason.
+
+---
+
+## Demo on your machine
+
+### Setup (once)
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python -m pip install -r requirements.txt
+cd frontend
+npm install
+npm run build
+cd ..
+```
+
+Create a `.env` file in the project folder:
+
+```
+ALERT_WEBHOOK_URL=<Discord webhook URL>
+LLM_PROVIDER=groq
+GROQ_API_KEY=<Groq key>
+GROQ_MODEL=openai/gpt-oss-20b
+GROQ_REASONING_EFFORT=low
+ADMIN_API_KEY=<admin key>
+```
+
+All of these are optional: without them, alerts print in the terminal, the AI uses mock wording and changes need no key.
+
+### 1. The 3 expected alerts
 
 ```powershell
 .\.venv\Scripts\python -m backend.cli
 ```
+
+Expected:
+
 ```
 ALERTS (3)
   [WARNING] T-01  Above 8 °C for 30 min (08:10–08:40), peak 9.6 °C.
@@ -77,271 +93,99 @@ NO ALERT (2)
   T-02  one reading out of range (8.9 °C at 08:10), under the 20-min limit
   T-03  never outside 2–8 °C
 ```
-### 1b. Send them to Discord `#ops-alerts`
 
-Add `--send` to any command to deliver the alerts to Discord (needs `ALERT_WEBHOOK_URL` in `.env`); `--ai --send` sends AI-worded messages with the facts underneath.
+### 2. Send the 3 alerts to Discord
 
 ```powershell
-.\.venv\Scripts\python -m backend.cli --send
 .\.venv\Scripts\python -m backend.cli --ai --send
 ```
 
-Expected: the terminal ends with `Delivered 3 of 3 notifications via webhook.` and 3 messages (T-01, T-05, T-04) appear in `#ops-alerts`. Each run sends again, so it can be repeated during the demo.
+Expected: `Delivered 3 of 3 notifications via webhook.` and 3 messages in `#ops-alerts`, each in plain words with the exact facts underneath. Use `--send` without `--ai` for the plain rule-based messages.
 
-### 2. Change the range or the time limit: the alerts change
-
-| Command | Range / limit | Alerts |
-|---|---|---|
-| `.\.venv\Scripts\python -m backend.cli` | 2–8 °C, 20 min (default) | **3**: T-01, T-05, T-04 |
-| `.\.venv\Scripts\python -m backend.cli --alert-after-min 25` | 2–8 °C, 25 min | **2**: T-01, T-05 (T-04 was out of range for exactly 20 min, so it is missed) |
-| `.\.venv\Scripts\python -m backend.cli --max-safe-c 9.5` | 2–9.5 °C | **0**: only one reading (9.6 °C) is above 9.5 |
-| `.\.venv\Scripts\python -m backend.cli --min-safe-c 0 --max-safe-c 5` | 0–5 °C (chilled food) | **5**: every truck; T-01, T-02, T-04, T-05 Critical (≥ 3 °C over), T-03 Warning |
-
-The same changes, delivered to Discord:
+### 3. Change the range or the time limit, and send to Discord
 
 ```powershell
 .\.venv\Scripts\python -m backend.cli --alert-after-min 25 --ai --send
+.\.venv\Scripts\python -m backend.cli --max-safe-c 9.5 --ai --send
 .\.venv\Scripts\python -m backend.cli --min-safe-c 0 --max-safe-c 5 --ai --send
 ```
 
-Expected: 2 messages (T-01, T-05), then 6 messages: an alert for every truck (4 Critical, T-03 Warning) and one "not improving" update for T-03.
-
-### 3. On Google Cloud: which truck has an issue
-
-```powershell
-$U = "https://cold-chain-alerts-78623167451.asia-south1.run.app"
-
-Invoke-RestMethod "$U/api/trucks" | Select-Object truck_id, state, last_temperature_c, min_safe_c, max_safe_c | Format-Table
-
-Invoke-RestMethod "$U/api/alerts" | Select-Object truck_id, status, severity, reason | Format-Table -Wrap
-
-Invoke-RestMethod "$U/api/alerts?status=recovering" | Select-Object truck_id, reason | Format-Table -Wrap
-Invoke-RestMethod "$U/api/alerts?status=open" | Select-Object truck_id, reason | Format-Table -Wrap
-```
-Expected: T-01 closed, T-05 closed, **T-04 recovering** ("Above 8 °C for 20 min (08:25–08:45), peak 9.1 °C. Includes missing data: 08:30–08:40 (10 min).").
-
-### 4. Change one truck's range in the dashboard, see a new alert, undo it
-
-Open the dashboard (http://127.0.0.1:8000 or the live link) and scroll to **Truck ranges**:
-
-1. Click the **T-03** row (its id fills the form).
-2. Enter min `0` and max `5` (chilled food).
-3. Enter the admin key and click **Save range**.
-4. The message reads "T-03 range saved. Alerts re-checked.", the fleet table shows T-03 at **0 to 5 °C (own)**, and a new alert appears: **T-03: "Above 5 °C for 50 min (08:00–08:50), peak 7 °C."**
-5. To undo: click **T-03**, then **Use default**. T-03 is back on 2–8 °C and its alert disappears.
-
-Without the admin key the change is refused ("Wrong or missing admin key").
-
-The same change through the API, as an alternative:
-
-```powershell
-$key = @{ "X-API-Key" = "<your ADMIN_API_KEY>" }
-Invoke-RestMethod -Method Put "$U/api/trucks/T-03/range" -Headers $key -ContentType "application/json" -Body '{"min_safe_c": 0, "max_safe_c": 5}'
-Invoke-RestMethod "$U/api/alerts?status=open" | Select-Object truck_id, reason | Format-Table -Wrap
-Invoke-RestMethod -Method Put "$U/api/trucks/T-03/range" -Headers $key -ContentType "application/json" -Body '{"min_safe_c": null, "max_safe_c": null}'
-```
-
-## Demo: step by step
-
-Windows PowerShell, from the project folder. About 10 minutes.
-
-### 1. One-time setup
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\python -m pip install -r requirements-dev.txt
-cd frontend; npm install; npm run build; cd ..
-Copy-Item .env.example .env
-```
-Then open `.env` and fill in:
-
-| Setting | Needed for | Without it |
+| Command | Alerts | Discord |
 |---|---|---|
-| `ALERT_WEBHOOK_URL` | Alerts in Discord (`#ops-alerts` → Edit Channel → Integrations → Webhooks → Copy URL) | Messages print in the terminal |
-| `LLM_PROVIDER=groq`, `GROQ_API_KEY`, `GROQ_MODEL=openai/gpt-oss-20b` | AI-worded alerts | `mock` wording |
-| `ADMIN_API_KEY` | Protects changes (upload, truck ranges) | Changes need no key |
-| `DATABASE_URL` | PostgreSQL | Local SQLite file in `data/` |
+| `--alert-after-min 25` | 2: T-01, T-05. T-04 was out of range for exactly 20 min, so a 25-min limit misses it | 2 messages |
+| `--max-safe-c 9.5` | 0: only one reading (9.6 °C) is above 9.5 | nothing |
+| `--min-safe-c 0 --max-safe-c 5` | 5: every truck (4 Critical, T-03 Warning) | 6 messages (5 alerts + 1 "not improving" update for T-03) |
 
-### 2. The problem and the answer (CLI)
-
-```powershell
-.\.venv\Scripts\python -m backend.cli
-```
-Point out: **3 alerts** (T-01, T-04, T-05) out of 21 warm readings, and a reason for every truck. T-02 was a one-reading blip; T-03 never left the range; T-04 alerted across a missing reading; T-05 was shuffled in the file.
-
-### 3. A "what if" (tricky input)
-
-```powershell
-.\.venv\Scripts\python -m backend.cli --alert-after-min 25
-```
-T-04 drops out: it was out of range for exactly 20 minutes. This is why the limit is 20.
-
-### 4. Alerts reach the ops team (Discord)
-
-```powershell
-.\.venv\Scripts\python -m backend.cli --ai --send
-```
-Show `#ops-alerts`: three messages, AI-worded with a likely cause and the exact facts underneath. Only one message per problem.
-
-### 5. The ops dashboard
+### 4. The dashboard
 
 ```powershell
 .\.venv\Scripts\python -m uvicorn backend.main:app --port 8000
 ```
-Open http://127.0.0.1:8000 (leave this terminal running and use a second one for the next steps).
 
-- The red banner shows the open alert (T-04, recovering).
-- Click **T-04** in the fleet table to see the chart: green band = safe range, red = alert period, with the 08:30–08:40 data gap.
-- The alert cards show the reason and the labelled AI summary.
+Open http://127.0.0.1:8000 and follow the same steps as the cloud demo. In **Ask about the fleet**, type:
 
-### 6. Each truck's own range
+- `Which trucks are in trouble right now?` → "T-04 is in recovering state…" (MCP tool: `get_fleet_status`)
+- `Which trucks had alerts today and are they closed?` → "T-01 (closed), T-05 (closed), T-04 (recovering)." (MCP tool: `get_all_alerts`)
 
-In **Truck ranges**: every truck was added automatically with an empty range (default 2–8 °C). Click **T-03**, enter min `0` and max `5` (chilled food), enter the admin key and click **Save range**. T-03 immediately gets an "Above 5 °C" alert. Click **Use default** to undo.
+### 5. A new truck reports a problem
 
-### 7. Live: a new truck has a problem
-
-In a second terminal (use your `ADMIN_API_KEY`):
+With the server running, in a second PowerShell terminal:
 
 ```powershell
 $readings = 30,35,40,45,50 | ForEach-Object { @{ truck_id = "T-09"; timestamp = "2026-07-20T08:$($_):00"; temperature_c = 9.4; humidity_pct = 60 } }
 $body = @{ readings = @($readings) } | ConvertTo-Json -Depth 4
-Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/readings -Headers @{ "X-API-Key" = "<your ADMIN_API_KEY>" } -ContentType "application/json" -Body $body
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/readings -Headers @{ "X-API-Key" = "<admin key>" } -ContentType "application/json" -Body $body
 ```
-T-09 (never seen before) is registered automatically, warm for 20 minutes, so it alerts. It appears on the dashboard within 20 seconds and in Discord. (The first upload also delivers the 3 seed alerts, because the server sends each alert once and hasn't sent those yet.) Run the same command again: nothing new is sent.
 
-To start over: `Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/reset -Headers @{ "X-API-Key" = "<your ADMIN_API_KEY>" }`
+T-09 is registered automatically, alerts on the dashboard and is sent to Discord. Run it again: nothing new is sent, because each alert goes out once.
 
-### 8. Ask an AI about the fleet (MCP)
-
-In the dashboard's **Ask about the fleet** box, type *"Which trucks are in trouble right now?"*. The answer comes from Groq calling our MCP tools on the live data; the tools it used are shown under the answer. Then try *"What happened to T-04 in the last 30 minutes?"*: it picks a different tool.
-
-The same MCP server also works from Claude Code: 
-open a **new** Claude Code chat in this folder (it reads `.mcp.json` at start), type `/mcp` and approve **cold-chain**, then ask *"Which trucks are in trouble right now?"*. It answers from the real data through read-only tools.
-
-Backup without AI: `npx @modelcontextprotocol/inspector .venv\Scripts\python -m backend.mcp_server`, then click **get_fleet_status**.
-
-### 9. Proof it works (tests)
+Reset the demo data:
 
 ```powershell
-.\.venv\Scripts\python -m pytest
-cd frontend; npm test; cd ..
-.\.venv\Scripts\python -m pytest tests_e2e --browser-channel chrome --no-cov
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/reset -Headers @{ "X-API-Key" = "<admin key>" }
 ```
-221 tests: unit, integration and end-to-end. See [docs/TESTING.md](docs/TESTING.md).
 
-## How it works
-```
-readings ─► Loader (validate, flag impossible temps, dedupe, SORT by sensor time)
-         ─► State machine per truck: OK → SUSPECT → ALERT → RECOVERING → OK
-         ─► alerts + notifications (fixed ids, so each is sent once)
-         ─► CLI report · Discord/Slack webhook · optional AI wording
-```
-- **Alert** after **20 min** out of the **2–8 °C** range, measured from sensor timestamps.
-- **Recovered** only after **10 min back in range**, seen by 2 readings. A single dip doesn't reset or close anything.
-- **Gaps** of up to 15 min are bridged and reported in the alert. A longer silence gets its own "sensor silent" notification.
-- **No repeats:** after the first alert, an update goes out only if the temperature **isn't improving** (checked every 10 min), and once more if it turns **Critical** (60 min, or ≥ 11 °C).
-- **The rules decide; the AI only words the message.** Every number in an AI summary is checked against the alert, and if anything is off the plain message is sent.
+---
 
-## Run it
+## API
 
-Needs Python 3.12 locally (Windows PowerShell shown). The Cloud Run build uses Python 3.13, because Google's buildpacks no longer offer 3.12; the tests have been run on 3.12 only.
+| Endpoint | Purpose | Admin key |
+|---|---|---|
+| `GET /health` | Liveness | No |
+| `GET /api/report` | Trucks, alerts, notifications with AI summaries | No |
+| `GET /api/trucks`, `GET /api/trucks/{id}` | Fleet states; one truck's readings and alerts | No |
+| `GET /api/alerts?status=open\|recovering\|closed` | Alerts with reasons | No |
+| `GET /api/ranges` | Every truck's own range (empty = default 2–8 °C) | No |
+| `POST /api/ask` | Question answered by Groq through our MCP tools | No |
+| `POST /api/readings` | Upload readings (max 5,000 / 2 MB) | Yes |
+| `PUT /api/trucks/{id}/range` | Set or clear a truck's range | Yes |
+| `POST /api/reset` | Reload the seed data | Yes |
+
+Interactive docs: `/docs`.
+
+## MCP server
+
+`backend/mcp_server.py` exposes 5 **read-only** tools: `get_fleet_status`, `get_open_alerts`, `get_all_alerts`, `get_truck_history`, `get_alert`. They are used by the dashboard's Ask box (our backend is the MCP client and Groq picks the tool), by Claude Code (`.mcp.json`) and by the MCP Inspector:
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\python -m pip install -r requirements.txt -r requirements-dev.txt
-
-.\.venv\Scripts\python -m backend.cli
-
-.\.venv\Scripts\python -m backend.cli --json
-.\.venv\Scripts\python -m backend.cli --alert-after-min 25
-
-.\.venv\Scripts\python -m backend.cli path\to\readings.json --now 2026-07-20T09:30:00
+npx @modelcontextprotocol/inspector .venv\Scripts\python -m backend.mcp_server
 ```
-### Send alerts to Discord (or Slack)
 
-1. In Discord: your server → channel `#ops-alerts` → ⚙️ Edit Channel → Integrations → Webhooks → New Webhook → **Copy Webhook URL**.
-2. `Copy-Item .env.example .env`, then set `ALERT_WEBHOOK_URL=<the URL>` in `.env`. The URL is a secret: `.env` is git-ignored.
-3. Run:
+## Security
 
-```powershell
-.\.venv\Scripts\python -m backend.cli --send
-.\.venv\Scripts\python -m backend.cli --ai --send
-```
-Without a URL, `--send` prints the messages to the console instead.
+- API keys, webhook URL and database URL live in Secret Manager (cloud) or `.env` (local), never in code, Git or logs.
+- Anyone can view; every change needs the admin key. The Ask box is limited to 20 questions a minute.
+- Every reading is validated; uploads are size-limited; SQL only through bound parameters.
+- Only numbers are sent to the LLM; invented numbers are rejected; MCP tools are read-only.
 
-### AI summaries (optional)
+## Tech stack
 
-Set `LLM_PROVIDER=groq` (and optionally `LLM_FALLBACK_PROVIDER=gemini`) with the matching API key and model in `.env`. The default, `mock`, needs no key. Only the alert's numbers are sent to the LLM. It has 5 s in total, and on any timeout, error or invented number the plain message is used. Example from the seed data (Groq):
+Python (FastAPI, Pydantic, SQLAlchemy, PostgreSQL), React + TypeScript + Vite, Groq `openai/gpt-oss-20b` with Gemini fallback, MCP Python SDK, Discord webhook, Google Cloud Run + Cloud SQL + Secret Manager; tested with pytest, vitest and Playwright.
 
-> Truck T-01 temperature rose above 8.0 °C, reaching 9.6 °C with a rising trend and increasing humidity from 58 % to 61 %. Likely a warm air ingress or a failing reefer unit.
+## Limits and next steps
 
-### Dashboard + API
-
-```powershell
-cd frontend; npm install; npm run build; cd ..
-.\.venv\Scripts\python -m uvicorn backend.main:app --port 8000
-```
-| Endpoint | Purpose |
-|---|---|
-| `GET /health` | Liveness |
-| `GET /api/report` | Everything: trucks, alerts, notifications (with AI summaries), data quality |
-| `GET /api/trucks`, `GET /api/trucks/{id}` | Fleet states; one truck's readings and alerts (for the chart) |
-| `GET /api/alerts?status=open\|recovering\|closed` | Alerts with reasons |
-| `POST /api/readings` | Upload `{"readings": [...], "replace": false}`. Re-evaluates and pushes new notifications once. Max 5,000 readings / 2 MB. |
-| `POST /api/reset` | Reload the seed data (demo) |
-| `GET /api/ranges`, `PUT /api/trucks/{id}/range` | Each truck's own range; empty = default (writes need `X-API-Key`) |
-
-Sent notification ids are stored through SQLAlchemy (PostgreSQL via `DATABASE_URL`, otherwise a local SQLite file), so a restart never resends. The page refreshes every 20 s and shows a banner (and an optional desktop popup) when a new alert arrives.
-
-### Each truck's own range (no code changes)
-
-The first time a truck reports, it is **added to the database automatically with an empty range**, and an empty range means the default 2–8 °C applies, so a new truck is never unprotected. The dashboard's **Truck ranges** panel lists every registered truck with the time it was added. With the admin key, ops can fill in a truck's own range and alert time, or press "Use default" to clear it. Alerts are re-checked immediately.
-
-Through the API: `GET /api/ranges`, `PUT /api/trucks/{id}/range` with `X-API-Key`, or send ranges for new trucks with an upload: `{"readings": [...], "trucks": [{"truck_id": "T-20", "min_safe_c": -25, "max_safe_c": -18}]}`. An upload never overwrites a range that is already set.
-
-Example: give T-03 (5.8–7.0 °C) the range 0–5 °C and it alerts ("Above 5 °C…"), because that temperature is fine for medicine but too warm for chilled food.
-
-### Ask about the fleet (MCP, in the dashboard)
-
-Type a question in the dashboard's **Ask about the fleet** box, e.g. *"Which trucks are in trouble right now?"*. Our backend is an **MCP client**: it starts our MCP server (reading the live API), gives Groq the list of MCP tools, runs the tools Groq picks **through MCP**, and shows the answer with the tools it used. Every number and time in the answer must appear in the tool results, or the answer is withheld. Read-only, no key needed, 20 questions a minute. Endpoint: `POST /api/ask {"question": "..."}`.
-
-Real answers from the seed data: *"T-04 is in recovering state. No other trucks are in trouble."* (tool: `get_fleet_status`) and *"Trucks with alerts today: T-01 (closed), T-05 (closed), T-04 (recovering)."* (tool: `get_all_alerts`).
-
-### Ask an AI assistant (MCP)
-
-`backend/mcp_server.py` is a **read-only** MCP server, registered in `.mcp.json` as `cold-chain`. In Claude Code, ask *"which trucks are in trouble right now?"*: it calls `get_fleet_status` / `get_open_alerts` and answers from the real data. No tool can close or silence an alert. The backup demo needs no AI at all: `npx @modelcontextprotocol/inspector .venv\Scripts\python -m backend.mcp_server`.
-
-## Tests
-
-**221 automated tests:** 212 Python (unit + integration), 7 frontend and 2 end-to-end in real Chrome. 97% Python coverage, plus live checks against Discord and Groq. Details, and what each level proves: **[docs/TESTING.md](docs/TESTING.md)**.
-
-```powershell
-.\.venv\Scripts\python -m pytest
-cd frontend; npm run typecheck; npm test; cd ..
-.\.venv\Scripts\python -m pytest tests_e2e --browser-channel chrome --no-cov
-.\.venv\Scripts\ruff check .; .\.venv\Scripts\pip-audit -r requirements.txt
-```
-Tests never make real network calls: the webhook is forced off and the LLM to mock. They caught 5 real bugs, including the HTTP library logging the secret webhook URL and the settings object printing the database password.
-
-## Project layout
-```
-backend/engine/   loader, config (all thresholds), state machine — pure Python, no I/O
-backend/notify/   console + webhook senders, send-once dispatcher, payload
-backend/ai/       facts sent to the LLM, Groq/Gemini/mock clients, answer check
-backend/cli.py    command-line report, --send, --ai
-backend/report.py JSON form of the results (shared by CLI, API and MCP)
-backend/api.py    FastAPI app (backend/main.py starts it); backend/store.py = send-once table
-backend/mcp_server.py  read-only MCP tools for AI assistants
-frontend/src/     React + TypeScript dashboard (SVG chart, no chart library)
-tests/            unit + integration (pytest)   tests_e2e/  browser end-to-end
-docs/             assumptions, testing, screenshots
-```
-## Known limitations
-
-- **Batch, not streaming:** v1 evaluates a whole file. Live ingestion with late-data handling is designed (SOLUTION_DESIGN.md §4) but not built.
-- **The API keeps readings in memory** (the send-once ids are in the database). A restart reloads the seed file, and a multi-instance deployment would need readings in the database too.
-- **CLI `--send` remembers sent ids only for that run** (the API uses the database).
-- **Ranges are per truck, set by ops**, not per shipment from a dispatch system.
-- **Sensor-fault readings** (< −40 / > 50 °C) are flagged and ignored but don't notify anyone yet.
-- **Viewing is open; changes need the admin key** (`X-API-Key`). There are no per-user logins yet; a real deployment would add SSO (e.g. an identity proxy in front of Cloud Run).
-- The MCP server reads the seed file, not readings uploaded to the running API.
+- **The Ask box works locally but not yet on Cloud Run** (the MCP helper process needs the full environment there).
+- Readings are processed in batches and kept in memory in the API; next: streaming ingestion and readings stored in PostgreSQL.
+- Ranges are set per truck; next: a range per shipment from the dispatch system.
+- Impossible sensor readings are flagged but not notified; next: a "sensor fault" alert.
+- One shared admin key; next: single sign-on.
