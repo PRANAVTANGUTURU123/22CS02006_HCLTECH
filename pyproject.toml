@@ -1,7 +1,7 @@
 [project]
 name = "cold-chain-alerting"
 version = "0.1.0"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.12,<3.14"
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

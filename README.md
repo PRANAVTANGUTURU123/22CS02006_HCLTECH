@@ -136,7 +136,7 @@ readings ─► Loader (validate, flag impossible temps, dedupe, SORT by sensor 
 
 ## Run it
 
-Needs Python 3.12 (Windows PowerShell shown).
+Needs Python 3.12 locally (Windows PowerShell shown). The Cloud Run build uses Python 3.13, because Google's buildpacks no longer offer 3.12; the tests have been run on 3.12 only.
 
 ```powershell
 python -m venv .venv
