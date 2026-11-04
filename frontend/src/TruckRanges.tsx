@@ -2,13 +2,6 @@ import { useEffect, useState } from "react";
 import { fetchRanges, hhmm, putRange } from "./api";
 import type { Ranges } from "./types";
 
-const PRESETS: Record<string, [number, number]> = {
-  "Pharma 2–8": [2, 8],
-  "Chilled 0–5": [0, 5],
-  "Frozen −25 to −18": [-25, -18],
-  "Ambient 15–25": [15, 25],
-};
-
 const EMPTY = { truck: "", min: "", max: "", after: "" };
 
 export function TruckRanges({ refreshKey, onChanged }: { refreshKey: unknown; onChanged: () => void }) {
@@ -110,13 +103,6 @@ export function TruckRanges({ refreshKey, onChanged }: { refreshKey: unknown; on
           <input aria-label="Min °C" type="number" step="0.1" value={form.min} placeholder="min °C" onChange={(e) => setForm({ ...form, min: e.target.value })} />
           <input aria-label="Max °C" type="number" step="0.1" value={form.max} placeholder="max °C" onChange={(e) => setForm({ ...form, max: e.target.value })} />
           <input aria-label="Alert after min" type="number" value={form.after} placeholder={`alert after (${d.alert_after_min})`} onChange={(e) => setForm({ ...form, after: e.target.value })} />
-          <span className="presets">
-            {Object.entries(PRESETS).map(([label, [lo, hi]]) => (
-              <button key={label} type="button" onClick={() => setForm({ ...form, min: String(lo), max: String(hi) })}>
-                {label}
-              </button>
-            ))}
-          </span>
         </fieldset>
         <div className="actions">
           <input

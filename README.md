@@ -99,7 +99,7 @@ Sent notification ids are stored through SQLAlchemy (PostgreSQL via `DATABASE_UR
 
 ### Each truck's own range (no code changes)
 
-The first time a truck reports, it is **added to the database automatically with an empty range**, and an empty range means the default 2–8 °C applies, so a new truck is never unprotected. The dashboard's **Truck ranges** panel lists every registered truck with the time it was added. With the admin key, ops can fill in a truck's own range and alert time (quick-fill buttons for pharma, chilled, frozen and ambient), or press "Use default" to clear it. Alerts are re-checked immediately.
+The first time a truck reports, it is **added to the database automatically with an empty range**, and an empty range means the default 2–8 °C applies, so a new truck is never unprotected. The dashboard's **Truck ranges** panel lists every registered truck with the time it was added. With the admin key, ops can fill in a truck's own range and alert time, or press "Use default" to clear it. Alerts are re-checked immediately.
 
 Through the API: `GET /api/ranges`, `PUT /api/trucks/{id}/range` with `X-API-Key`, or send ranges for new trucks with an upload: `{"readings": [...], "trucks": [{"truck_id": "T-20", "min_safe_c": -25, "max_safe_c": -18}]}`. An upload never overwrites a range that is already set.
 

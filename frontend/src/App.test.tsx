@@ -109,7 +109,8 @@ describe("dashboard", () => {
     );
     render(<App />);
     fireEvent.change(await screen.findByLabelText("Truck id"), { target: { value: "T-02" } });
-    fireEvent.click(screen.getByText("Chilled 0–5"));
+    fireEvent.change(screen.getByLabelText("Min °C"), { target: { value: "0" } });
+    fireEvent.change(screen.getByLabelText("Max °C"), { target: { value: "5" } });
     fireEvent.change(screen.getByLabelText("Admin key"), { target: { value: "k" } });
     fireEvent.click(screen.getByText("Save range"));
     expect(await screen.findByText("T-02 range saved. Alerts re-checked.")).toBeTruthy();
