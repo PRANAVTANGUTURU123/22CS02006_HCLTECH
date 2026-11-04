@@ -112,6 +112,8 @@ Invoke-RestMethod "$U/api/alerts?status=open" | Select-Object truck_id, reason |
 
 Invoke-RestMethod -Method Put "$U/api/trucks/T-03/range" -Headers $key -ContentType "application/json" -Body '{"min_safe_c": null, "max_safe_c": null}'
 ```
+Expected after setting the range: **T-03: "Above 5 °C for 50 min (08:00–08:50), peak 7 °C."** The last command puts T-03 back on the default 2–8 °C.
+
 The same change can be made on the dashboard (open the live link, **Truck ranges** panel). Without the key the API answers 401.
 
 ## Demo: step by step
