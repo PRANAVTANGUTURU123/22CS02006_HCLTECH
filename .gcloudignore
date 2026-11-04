@@ -21,3 +21,5 @@ docs/
 scripts/
 # frontend/dist IS uploaded: build it first with `npm run build` in frontend/.
 frontend/src/
+# Local dev uses 3.12 (.venv); Google's current buildpacks only offer 3.13+, set in the deploy script.
+.python-version

@@ -13,6 +13,7 @@ Pop-Location
 Push-Location $root
 & $gcloud run deploy cold-chain-alerts `
     --source . `
+    --set-build-env-vars GOOGLE_PYTHON_VERSION=3.13 `
     --project hcl-hackathon-513621 `
     --region asia-south1 `
     --allow-unauthenticated `
