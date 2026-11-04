@@ -77,7 +77,16 @@ NO ALERT (2)
   T-02  one reading out of range (8.9 °C at 08:10), under the 20-min limit
   T-03  never outside 2–8 °C
 ```
-Send the same 3 alerts to Discord `#ops-alerts` (AI-worded): `.\.venv\Scripts\python -m backend.cli --ai --send`
+### 1b. Send them to Discord `#ops-alerts`
+
+Add `--send` to any command to deliver the alerts to Discord (needs `ALERT_WEBHOOK_URL` in `.env`); `--ai --send` sends AI-worded messages with the facts underneath.
+
+```powershell
+.\.venv\Scripts\python -m backend.cli --send
+.\.venv\Scripts\python -m backend.cli --ai --send
+```
+
+Expected: the terminal ends with `Delivered 3 of 3 notifications via webhook.` and 3 messages (T-01, T-05, T-04) appear in `#ops-alerts`. Each run sends again, so it can be repeated during the demo.
 
 ### 2. Change the range or the time limit: the alerts change
 
@@ -87,6 +96,15 @@ Send the same 3 alerts to Discord `#ops-alerts` (AI-worded): `.\.venv\Scripts\py
 | `.\.venv\Scripts\python -m backend.cli --alert-after-min 25` | 2–8 °C, 25 min | **2**: T-01, T-05 (T-04 was out of range for exactly 20 min, so it is missed) |
 | `.\.venv\Scripts\python -m backend.cli --max-safe-c 9.5` | 2–9.5 °C | **0**: only one reading (9.6 °C) is above 9.5 |
 | `.\.venv\Scripts\python -m backend.cli --min-safe-c 0 --max-safe-c 5` | 0–5 °C (chilled food) | **5**: every truck; T-01, T-02, T-04, T-05 Critical (≥ 3 °C over), T-03 Warning |
+
+The same changes, delivered to Discord:
+
+```powershell
+.\.venv\Scripts\python -m backend.cli --alert-after-min 25 --ai --send
+.\.venv\Scripts\python -m backend.cli --min-safe-c 0 --max-safe-c 5 --ai --send
+```
+
+Expected: 2 messages (T-01, T-05), then 6 messages: an alert for every truck (4 Critical, T-03 Warning) and one "not improving" update for T-03.
 
 ### 3. On Google Cloud: which truck has an issue
 
