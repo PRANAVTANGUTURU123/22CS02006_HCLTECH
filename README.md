@@ -60,6 +60,71 @@ No keys are needed: without `.env`, alerts print to the console and the AI uses 
 
 Three alerts, three notifications, and a stated reason for every truck, including why T-02 and T-03 did *not* alert.
 
+## Demo commands (tested)
+
+Run from the project folder in PowerShell. Expected results are shown under each command.
+
+### 1. The 3 alerts we expect (seed data)
+
+```powershell
+.\.venv\Scripts\python -m backend.cli
+```
+
+```
+ALERTS (3)
+  [WARNING] T-01  Above 8 °C for 30 min (08:10–08:40), peak 9.6 °C.
+  [WARNING] T-05  Above 8 °C for 30 min (08:10–08:40), peak 9.6 °C.
+  [WARNING] T-04  Above 8 °C for 20 min (08:25–08:45), peak 9.1 °C. Includes missing data: 08:30–08:40 (10 min).
+NO ALERT (2)
+  T-02  one reading out of range (8.9 °C at 08:10), under the 20-min limit
+  T-03  never outside 2–8 °C
+```
+
+Send the same 3 alerts to Discord `#ops-alerts` (AI-worded): `.\.venv\Scripts\python -m backend.cli --ai --send`
+
+### 2. Change the range or the time limit: the alerts change
+
+| Command | Range / limit | Alerts |
+|---|---|---|
+| `.\.venv\Scripts\python -m backend.cli` | 2–8 °C, 20 min (default) | **3**: T-01, T-05, T-04 |
+| `.\.venv\Scripts\python -m backend.cli --alert-after-min 25` | 2–8 °C, 25 min | **2**: T-01, T-05 (T-04 was out of range for exactly 20 min, so it is missed) |
+| `.\.venv\Scripts\python -m backend.cli --max-safe-c 9.5` | 2–9.5 °C | **0**: only one reading (9.6 °C) is above 9.5 |
+| `.\.venv\Scripts\python -m backend.cli --min-safe-c 0 --max-safe-c 5` | 0–5 °C (chilled food) | **5**: every truck; T-01, T-02, T-04, T-05 Critical (≥ 3 °C over), T-03 Warning |
+
+### 3. On Google Cloud: which truck has an issue
+
+```powershell
+$U = "https://cold-chain-alerts-78623167451.asia-south1.run.app"
+
+# Every truck and its state (ok / suspect / alert / recovering)
+Invoke-RestMethod "$U/api/trucks" | Select-Object truck_id, state, last_temperature_c, min_safe_c, max_safe_c | Format-Table
+
+# Every alert with its reason
+Invoke-RestMethod "$U/api/alerts" | Select-Object truck_id, status, severity, reason | Format-Table -Wrap
+
+# Only the trucks that still need attention
+Invoke-RestMethod "$U/api/alerts?status=recovering" | Select-Object truck_id, reason | Format-Table -Wrap
+Invoke-RestMethod "$U/api/alerts?status=open" | Select-Object truck_id, reason | Format-Table -Wrap
+```
+
+Expected: T-01 closed, T-05 closed, **T-04 recovering** ("Above 8 °C for 20 min (08:25–08:45), peak 9.1 °C. Includes missing data: 08:30–08:40 (10 min).").
+
+### 4. On Google Cloud: change one truck's range, see a new alert, undo it
+
+```powershell
+$key = @{ "X-API-Key" = "<your ADMIN_API_KEY>" }
+
+# T-03 (5.8–7.0 °C) gets a chilled-food range of 0–5 °C
+Invoke-RestMethod -Method Put "$U/api/trucks/T-03/range" -Headers $key -ContentType "application/json" -Body '{"min_safe_c": 0, "max_safe_c": 5}'
+Invoke-RestMethod "$U/api/alerts?status=open" | Select-Object truck_id, reason | Format-Table -Wrap
+#   -> T-03  Above 5 °C for 50 min (08:00–08:50), peak 7 °C.
+
+# Undo: back to the default 2–8 °C
+Invoke-RestMethod -Method Put "$U/api/trucks/T-03/range" -Headers $key -ContentType "application/json" -Body '{"min_safe_c": null, "max_safe_c": null}'
+```
+
+The same change can be made on the dashboard (open the live link, **Truck ranges** panel). Without the key the API answers 401.
+
 ## Demo: step by step
 
 Windows PowerShell, from the project folder. About 10 minutes.
