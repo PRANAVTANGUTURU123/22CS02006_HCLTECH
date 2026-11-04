@@ -64,3 +64,8 @@ input[type="number"] { width: 110px; }
 button:disabled { opacity: 0.5; cursor: not-allowed; }
 .ok-text { color: var(--ok); }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.ask { display: flex; gap: 8px; }
+.ask input { flex: 1; min-width: 0; }
+.answer { margin-top: 12px; border-radius: 6px; padding: 8px 12px; }
+.answer p { margin: 4px 0; }
+.answer.warn { background: #fff7e6; }

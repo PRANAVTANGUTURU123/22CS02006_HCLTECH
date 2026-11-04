@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchReport, fetchTruck, hhmm } from "./api";
+import { AskBox } from "./AskBox";
 import { TruckRanges } from "./TruckRanges";
 import { TempChart } from "./TempChart";
 import type { Alert, Report, TruckDetail } from "./types";
@@ -111,6 +112,8 @@ export default function App() {
           {newIds.length > 0 && <strong> — new since you opened this page</strong>}
         </div>
       )}
+
+      <AskBox />
 
       <section>
         <h2>Fleet</h2>

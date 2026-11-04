@@ -57,6 +57,10 @@ const ranges = {
 function mockFetch(onPut?: (url: string, init: RequestInit) => Response) {
   return vi.fn(async (url: string, init?: RequestInit) => {
     if (init?.method === "PUT" && onPut) return onPut(url, init);
+    if (url === "/api/ask") {
+      const q = JSON.parse(String(init?.body)).question;
+      return new Response(JSON.stringify({ answer: `You asked: ${q}. T-04 is recovering.`, ok: true, tools_used: ["get_open_alerts"] }), { status: 200 });
+    }
     const body = url === "/api/ranges" ? ranges : url.startsWith("/api/trucks/") ? detail : report;
     return new Response(JSON.stringify(body), { status: 200 });
   });
@@ -125,6 +129,15 @@ describe("dashboard", () => {
     fireEvent.change(await screen.findByLabelText("Truck id"), { target: { value: "T-02" } });
     fireEvent.click(screen.getByText("Use default"));
     expect(await screen.findByText("Wrong or missing admin key")).toBeTruthy();
+  });
+
+  it("asks a question and shows the AI answer with the MCP tools used", async () => {
+    vi.stubGlobal("fetch", mockFetch());
+    render(<App />);
+    fireEvent.change(await screen.findByLabelText("Question"), { target: { value: "Which trucks are in trouble?" } });
+    fireEvent.click(screen.getByText("Ask"));
+    expect(await screen.findByText("You asked: Which trucks are in trouble?. T-04 is recovering.")).toBeTruthy();
+    expect(screen.getByText("MCP tools used: get_open_alerts")).toBeTruthy();
   });
 
   it("shows an error when the API is down", async () => {

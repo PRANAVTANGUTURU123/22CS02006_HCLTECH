@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import hmac
 import logging
 import threading
+import time
+from collections import deque
+from collections.abc import Callable
 from typing import Any, Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
@@ -13,7 +17,13 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from backend.ai import Summarizer, facts_by_notification, llm_from_settings
+from backend.ai import (
+    Summarizer,
+    chat_llm_from_settings,
+    facts_by_notification,
+    llm_from_settings,
+)
+from backend.ai.ask import Answer, ask_via_mcp
 from backend.engine import DEFAULT_CONFIG, AlertConfig, FleetReport, load_raw_file
 from backend.notify import Sender, SentStore, dispatch, sender_from_settings
 from backend.report import (
@@ -40,6 +50,10 @@ class TruckRangeIn(BaseModel):
 
 class NewTruck(TruckRangeIn):
     truck_id: str = Field(min_length=1, max_length=64)
+
+
+class AskIn(BaseModel):
+    question: str = Field(min_length=3, max_length=300)
 
 
 class ReadingsUpload(BaseModel):
@@ -100,6 +114,7 @@ def create_app(
     store: SentStore | None = None,
     llm=None,
     registry: TruckRegistry | None = None,
+    asker: Callable[[str, str | None], Answer] | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     sender = sender or sender_from_settings(settings)
@@ -112,6 +127,13 @@ def create_app(
     registry = registry or TruckRegistry(db, DEFAULT_CONFIG)
     llm = llm or llm_from_settings(settings)
     fleet = Fleet(load_raw_file(settings.readings_path), DEFAULT_CONFIG, llm, registry)
+    if asker is None:
+        chat_llm = llm if hasattr(llm, "chat") else chat_llm_from_settings(settings)
+
+        def asker(question: str, api_url: str | None) -> Answer:
+            return asyncio.run(ask_via_mcp(question, chat_llm, api_url))
+
+    ask_times: deque[float] = deque()
 
     app = FastAPI(title="Cold-Chain Alerting", version="1.0.0")
     app.state.fleet = fleet
@@ -254,6 +276,19 @@ def create_app(
             raise HTTPException(422, str(exc)) from None
         fleet.refresh()
         return range_dict(row)
+
+    @app.post("/api/ask")
+    def ask(body: AskIn, request: Request) -> dict[str, Any]:
+        now = time.monotonic()
+        while ask_times and now - ask_times[0] > 60:
+            ask_times.popleft()
+        if len(ask_times) >= settings.ask_per_minute:
+            raise HTTPException(429, "too many questions, try again in a minute")
+        ask_times.append(now)
+        port = (request.scope.get("server") or (None, None))[1]
+        api_url = f"http://127.0.0.1:{port}" if settings.ask_live_data and port else None
+        answer = asker(body.question.strip(), api_url)
+        return {"answer": answer.text, "ok": answer.ok, "tools_used": answer.tools_used}
 
     @app.post("/api/reset", dependencies=[Depends(require_key)])
     def reset() -> dict[str, int]:

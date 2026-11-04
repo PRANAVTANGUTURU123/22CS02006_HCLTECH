@@ -100,9 +100,12 @@ T-09 (never seen before) is registered automatically, warm for 20 minutes, so it
 
 To start over: `Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/reset -Headers @{ "X-API-Key" = "<your ADMIN_API_KEY>" }`
 
-### 8. Ask an AI assistant (MCP)
+### 8. Ask an AI about the fleet (MCP)
 
-Open a **new** Claude Code chat in this folder (it reads `.mcp.json` at start), type `/mcp` and approve **cold-chain**, then ask *"Which trucks are in trouble right now?"*. It answers from the real data through read-only tools.
+In the dashboard's **Ask about the fleet** box, type *"Which trucks are in trouble right now?"*. The answer comes from Groq calling our MCP tools on the live data; the tools it used are shown under the answer. Then try *"What happened to T-04 in the last 30 minutes?"*: it picks a different tool.
+
+The same MCP server also works from Claude Code: 
+open a **new** Claude Code chat in this folder (it reads `.mcp.json` at start), type `/mcp` and approve **cold-chain**, then ask *"Which trucks are in trouble right now?"*. It answers from the real data through read-only tools.
 
 Backup without AI: `npx @modelcontextprotocol/inspector .venv\Scripts\python -m backend.mcp_server`, then click **get_fleet_status**.
 
@@ -114,7 +117,7 @@ cd frontend; npm test; cd ..
 .\.venv\Scripts\python -m pytest tests_e2e --browser-channel chrome --no-cov
 ```
 
-203 tests: unit, integration and end-to-end. See [docs/TESTING.md](docs/TESTING.md).
+221 tests: unit, integration and end-to-end. See [docs/TESTING.md](docs/TESTING.md).
 
 ## How it works
 
@@ -197,13 +200,19 @@ Through the API: `GET /api/ranges`, `PUT /api/trucks/{id}/range` with `X-API-Key
 
 Example: give T-03 (5.8–7.0 °C) the range 0–5 °C and it alerts ("Above 5 °C…"), because that temperature is fine for medicine but too warm for chilled food.
 
+### Ask about the fleet (MCP, in the dashboard)
+
+Type a question in the dashboard's **Ask about the fleet** box, e.g. *"Which trucks are in trouble right now?"*. Our backend is an **MCP client**: it starts our MCP server (reading the live API), gives Groq the list of MCP tools, runs the tools Groq picks **through MCP**, and shows the answer with the tools it used. Every number and time in the answer must appear in the tool results, or the answer is withheld. Read-only, no key needed, 20 questions a minute. Endpoint: `POST /api/ask {"question": "..."}`.
+
+Real answers from the seed data: *"T-04 is in recovering state. No other trucks are in trouble."* (tool: `get_fleet_status`) and *"Trucks with alerts today: T-01 (closed), T-05 (closed), T-04 (recovering)."* (tool: `get_all_alerts`).
+
 ### Ask an AI assistant (MCP)
 
 `backend/mcp_server.py` is a **read-only** MCP server, registered in `.mcp.json` as `cold-chain`. In Claude Code, ask *"which trucks are in trouble right now?"*: it calls `get_fleet_status` / `get_open_alerts` and answers from the real data. No tool can close or silence an alert. The backup demo needs no AI at all: `npx @modelcontextprotocol/inspector .venv\Scripts\python -m backend.mcp_server`.
 
 ## Tests
 
-**203 automated tests:** 195 Python (unit + integration), 6 frontend and 2 end-to-end in real Chrome. 97% Python coverage, plus live checks against Discord and Groq. Details, and what each level proves: **[docs/TESTING.md](docs/TESTING.md)**.
+**221 automated tests:** 212 Python (unit + integration), 7 frontend and 2 end-to-end in real Chrome. 97% Python coverage, plus live checks against Discord and Groq. Details, and what each level proves: **[docs/TESTING.md](docs/TESTING.md)**.
 
 ```powershell
 .\.venv\Scripts\python -m pytest                       # unit + integration

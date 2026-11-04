@@ -55,6 +55,27 @@ class MockLLM:
             f"{f['minutes_out_of_range']} min (peak {f['peak_temp_c']:g} °C); {cause}."
         )
 
+    def chat(self, messages: list[dict], tools: list[dict], timeout: float) -> dict[str, Any]:
+        """Offline stand-in for tool calling: ask for open alerts, then answer from them."""
+        results = [m for m in messages if m.get("role") == "tool"]
+        if not results:
+            call = {"name": "get_open_alerts", "arguments": "{}"}
+            return {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [{"id": "call_1", "type": "function", "function": call}],
+            }
+        alerts = json.loads(results[-1]["content"] or "[]")
+        if isinstance(alerts, dict):
+            alerts = [alerts]
+        if not alerts:
+            return {"role": "assistant", "content": "No truck has an open alert right now."}
+        parts = [f"{a['truck_id']} ({a['status']}, peak {a['peak_c']:g} °C)" for a in alerts]
+        return {
+            "role": "assistant",
+            "content": "Trucks with open alerts: " + ", ".join(parts) + ".",
+        }
+
 
 class GroqLLM:
     name = "groq"
@@ -88,6 +109,30 @@ class GroqLLM:
         )
         try:
             return str(data["choices"][0]["message"]["content"] or "")
+        except (KeyError, IndexError, TypeError) as exc:
+            raise LLMError("unexpected response shape") from exc
+
+    def chat(self, messages: list[dict], tools: list[dict], timeout: float) -> dict[str, Any]:
+        """One tool-calling turn. Returns the assistant message (may contain tool_calls)."""
+        body: dict[str, Any] = {
+            "model": self._model,
+            "messages": messages,
+            "tools": tools,
+            "tool_choice": "auto",
+            "max_completion_tokens": 800,
+            "temperature": 0.1,
+        }
+        if self._effort:
+            body["reasoning_effort"] = self._effort
+        data = _post(
+            self._client,
+            "https://api.groq.com/openai/v1/chat/completions",
+            timeout,
+            headers=self._headers,
+            json=body,
+        )
+        try:
+            return data["choices"][0]["message"]
         except (KeyError, IndexError, TypeError) as exc:
             raise LLMError("unexpected response shape") from exc
 

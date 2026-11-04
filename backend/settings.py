@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     cors_origins: list[str] = Field(default_factory=list)
     # required (X-API-Key header) for every write when set; reads stay open
     admin_api_key: SecretStr | None = None
+    # Ask box: the MCP server reads this app's live API (off = read the seed file).
+    ask_live_data: bool = True
+    ask_per_minute: int = Field(default=20, gt=0, le=600)
     frontend_dist: Path = PROJECT_ROOT / "frontend" / "dist"
 
     # empty = print notifications to the console

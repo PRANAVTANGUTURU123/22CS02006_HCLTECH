@@ -41,6 +41,19 @@ def llm_from_settings(settings: Settings, client: httpx.Client | None = None) ->
     return WithFallback(primary, fallback)
 
 
+def chat_llm_from_settings(settings: Settings, client: httpx.Client | None = None):
+    """LLM with tool calling for the Ask box (Groq, or mock)."""
+    if settings.llm_provider == "groq":
+        key = settings.groq_api_key.get_secret_value().strip() if settings.groq_api_key else ""
+        return GroqLLM(
+            key,
+            settings.groq_model.strip(),
+            client or httpx.Client(),
+            settings.groq_reasoning_effort.strip(),
+        )
+    return MockLLM()
+
+
 def summarizer_for(report: FleetReport, settings: Settings) -> Summarizer:
     return Summarizer(
         llm_from_settings(settings),
@@ -54,6 +67,7 @@ __all__ = [
     "MockLLM",
     "Summarizer",
     "WithFallback",
+    "chat_llm_from_settings",
     "check_summary",
     "facts_by_notification",
     "llm_from_settings",

@@ -1,6 +1,6 @@
 # Testing & Verification
 
-**203 automated tests**: 195 Python (97% line coverage), 6 frontend and 2 end-to-end browser tests. On top of those, static checks, dependency audits and live checks against the real Discord and Groq. **No automated test touches the network:** `tests/conftest.py` forces the webhook off and the LLM to mock mode, even if `.env` holds real keys.
+**221 automated tests**: 212 Python, 7 frontend and 2 end-to-end browser tests. On top of those, static checks, dependency audits and live checks against the real Discord and Groq. **No automated test touches the network:** `tests/conftest.py` forces the webhook off and the LLM to mock mode, even if `.env` holds real keys.
 
 ## How to run
 
@@ -72,6 +72,12 @@ cd frontend; npm run typecheck; npm test; npm run build; cd ..       # types, UI
 - The same −10 °C reading is "too warm" for a frozen truck and "too cold" for a pharma truck.
 - Through the API: the seed trucks are registered with empty ranges; giving T-03 a 0–5 °C range immediately creates an "Above 5 °C" alert, and clearing it removes the alert; a new truck in an upload is registered and can bring its own range; **an upload never overwrites a range ops already set**; writes without the key get 401; bad input gets 422.
 - UI tests: the panel lists every registered truck, shows an empty range as "not set (default 2 to 8 °C)", shows the time each was added, sends the admin key in the header, and shows "Wrong or missing admin key" on a 401.
+
+### Ask box over MCP (`test_ask.py`, 17)
+- The answer check: numbers and times must appear in the tool results (also inside ISO timestamps); small counts allowed; an invented 9.8 °C, 07:55 or "45 minutes" is rejected.
+- The agent loop with a fake MCP session: the LLM calls a tool and answers; an invented number is withheld; an unknown tool name is never called; at most 4 steps; an empty answer is handled.
+- **A real MCP round trip:** the backend starts our MCP server as a separate process and talks the MCP protocol to it (offline mock LLM): the answer is "T-04 (recovering, peak 9.1 °C)" via `get_open_alerts`. An LLM outage gives a friendly message.
+- The MCP server reads the live API when told to; Groq's tool-calling request shape; the endpoint (live-data URL passed to MCP), question length limits (422), the rate limit (429), and no admin key needed.
 
 ### End-to-end tests (2)
 
