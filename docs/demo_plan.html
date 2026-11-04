@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Demo Plan: Cold-Chain Alerting Engine</title>
+<style>
+  @page { size: A4; margin: 16mm 15mm; }
+  body { font-family: "Segoe UI", Arial, sans-serif; font-size: 10.5pt; color: #1c2430; line-height: 1.42; }
+  h1 { font-size: 20pt; margin: 0 0 2px; }
+  h2 { font-size: 13pt; margin: 18px 0 6px; padding-bottom: 3px; border-bottom: 2px solid #1f6f8b; color: #134b5f; }
+  h3 { font-size: 11pt; margin: 12px 0 4px; }
+  .sub { color: #667085; margin: 0 0 10px; }
+  table { width: 100%; border-collapse: collapse; margin: 6px 0 8px; }
+  th, td { border: 1px solid #d5dbe3; padding: 4px 6px; text-align: left; vertical-align: top; }
+  th { background: #eef3f7; }
+  code, pre { font-family: Consolas, monospace; font-size: 9pt; }
+  pre { background: #f4f6f8; border: 1px solid #e1e6eb; border-radius: 4px; padding: 6px 8px; white-space: pre-wrap; margin: 4px 0; }
+  .say { background: #f5f0ff; border-left: 3px solid #6b46c1; padding: 4px 8px; margin: 4px 0; }
+  .say b { color: #6b46c1; }
+  .tip { background: #fff7e6; border-left: 3px solid #b7791f; padding: 4px 8px; margin: 4px 0; }
+  .step { page-break-inside: avoid; margin-bottom: 8px; }
+  ul { margin: 4px 0; padding-left: 18px; }
+  li { margin: 2px 0; }
+  .pb { page-break-before: always; }
+  .small { font-size: 9pt; color: #555; }
+</style>
+</head>
+<body>
+
+<h1>Demo Plan: Cold-Chain Alerting Engine</h1>
+<p class="sub">Nimbus Freight case study · 22CS02006 · Live: https://cold-chain-alerts-78623167451.asia-south1.run.app · Code: github.com/PRANAVTANGUTURU123/22CS02006_HCLTECH</p>
+
+<h2>1. The session at a glance</h2>
+<table>
+  <tr><th style="width:24%">Part</th><th style="width:10%">Time</th><th>What you show</th></tr>
+  <tr><td>Problem and assumptions</td><td>3 min</td><td>Priya's problem in one line, what the seed data shows, the key assumptions (2–8 °C, 20 min, 10 min, gaps)</td></tr>
+  <tr><td>Design walkthrough</td><td>4 min</td><td>The pipeline and the per-truck state machine; why sorting; why 20 minutes</td></tr>
+  <tr><td>Live demo (one tricky input)</td><td>10 min</td><td>CLI report → "what if 25 min" → Discord → dashboard → own range → live new truck → Ask box (MCP)</td></tr>
+  <tr><td>Limits and next steps</td><td>2 min</td><td>What is not built, what you would do with more time</td></tr>
+  <tr><td>Questions ("what if…")</td><td>rest</td><td>Section 7 has short answers</td></tr>
+</table>
+
+<h3>Before the session (checklist)</h3>
+<ul>
+  <li>Terminal 1 in the project folder: <code>.\.venv\Scripts\python -m uvicorn backend.main:app --port 8000</code> (leave it running).</li>
+  <li>Browser tabs: <b>http://127.0.0.1:8000</b> (dashboard), <b>Discord #ops-alerts</b>, the <b>live Cloud Run URL</b>, <b>GitHub</b>.</li>
+  <li>Terminal 2 ready for the commands below. <code>.env</code> has the webhook URL, Groq key and admin key.</li>
+  <li>Start clean: <code>Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/reset -Headers @{ "X-API-Key" = "&lt;admin key&gt;" }</code></li>
+  <li>Close other apps and notifications; share the whole screen.</li>
+</ul>
+
+<h2>2. Problem and assumptions (3 min)</h2>
+<div class="say"><b>Say:</b> "Nimbus gets an alert for every warm reading, so ops ignore them and miss real failures. They want one alert per real, sustained problem on a truck: no alerts for blips, no repeats for the same problem, and correct even when data is missing or out of order."</div>
+<table>
+  <tr><th style="width:12%">Truck</th><th>What the data shows</th><th style="width:28%">Result</th></tr>
+  <tr><td>T-01</td><td>Above 8 °C 08:10–08:40, peak 9.6 °C</td><td>Alert at 08:30, closed 08:50</td></tr>
+  <tr><td>T-02</td><td>One reading of 8.9 °C</td><td>No alert (blip)</td></tr>
+  <tr><td>T-03</td><td>Climbs to 7.0 °C, never above 8</td><td>No alert</td></tr>
+  <tr><td>T-04</td><td>Above 8 °C 08:25–08:45, <b>08:35 reading missing</b></td><td>Alert at 08:45 (starter code missed it)</td></tr>
+  <tr><td>T-05</td><td>Same as T-01, <b>shuffled in the file</b></td><td>Alert at 08:30 after sorting (starter code missed it)</td></tr>
+</table>
+<p><b>Key assumptions</b> (all in one config file, reasons in <code>docs/ASSUMPTIONS.md</code>):</p>
+<ul>
+  <li><b>2–8 °C</b> default range (refrigerated medicine, the strictest cargo). Each truck can have its own range; a new truck starts empty and uses the default.</li>
+  <li><b>Alert after 20 min</b> out of range, measured from sensor timestamps. Any limit from 10 to 20 min is correct on this data; 20 is the most patient.</li>
+  <li><b>Back to normal after 10 min</b> in range, seen by 2 readings. One dip does not reset or close anything.</li>
+  <li><b>Gaps up to 15 min</b> are bridged and reported. Longer = "sensor silent" notice. We never invent a temperature.</li>
+  <li><b>Critical</b> at 60 min or ≥ 11 °C. Between alert and Critical, an update only if the temperature is <b>not improving</b> (checked every 10 min).</li>
+  <li>Humidity is shown, not alerted on: it moves with temperature (correlation 0.89).</li>
+</ul>
+
+<h2>3. Design walkthrough (4 min)</h2>
+<pre>readings → Loader (validate, flag impossible temps, drop duplicates, SORT by sensor time)
+         → State machine per truck:  OK → SUSPECT → ALERT → RECOVERING → OK
+         → alerts + notifications (fixed ids, so each is sent once)
+         → CLI report · Discord webhook · AI wording · Dashboard · MCP server</pre>
+<div class="say"><b>Say:</b> "The rules decide, the AI only explains. The engine is pure Python with no I/O, so every rule is unit-tested. Sorting matters because '20 minutes in a row' only means something in time order: T-05 shows what happens without it."</div>
+
+<h2 class="pb">4. Live demo, step by step (10 min)</h2>
+
+<div class="step">
+<h3>Step 1: The answer on the seed data (CLI)</h3>
+<pre>.\.venv\Scripts\python -m backend.cli</pre>
+<div class="say"><b>Point at:</b> 3 alerts from 21 warm readings; the reason line for each; "NO ALERT" explains T-02 (one reading) and T-03 (never out of range); T-04 "Includes missing data 08:30–08:40".</div>
+</div>
+
+<div class="step">
+<h3>Step 2: The tricky input: shuffled file and a missing reading</h3>
+<p>T-05 is shuffled in the file and T-04 has a gap. Show they are handled, then change the limit:</p>
+<pre>.\.venv\Scripts\python -m backend.cli --alert-after-min 25</pre>
+<div class="say"><b>Say:</b> "With 25 minutes, T-04 disappears: it was out of range for exactly 20 minutes. That's why I chose 20. It's one setting, not code." (Starter code finds only T-01; a test proves it.)</div>
+</div>
+
+<div class="step">
+<h3>Step 3: Alerts reach ops (Discord + AI)</h3>
+<pre>.\.venv\Scripts\python -m backend.cli --ai --send</pre>
+<div class="say"><b>Show Discord:</b> one message per problem, AI-worded with a likely cause, and the exact facts underneath. "If the AI invents a number or is slow, the plain message goes out instead."</div>
+</div>
+
+<div class="step">
+<h3>Step 4: The ops dashboard</h3>
+<p>Open <b>http://127.0.0.1:8000</b> (or the live Cloud Run URL).</p>
+<ul>
+  <li>Red banner: T-04 open (recovering). Fleet table with state badges.</li>
+  <li>Click <b>T-04</b>: chart with the green safe band, the red alert period and the data gap.</li>
+  <li>Alert cards: the rule-based reason plus the labelled AI summary.</li>
+</ul>
+</div>
+
+<div class="step">
+<h3>Step 5: Each truck's own range (no code change)</h3>
+<p>In <b>Truck ranges</b>: every truck was added automatically with an empty range (default 2–8 °C). Click <b>T-03</b>, set min 0, max 5, enter the admin key, <b>Save range</b>.</p>
+<div class="say"><b>Say:</b> "T-03 at 6–7 °C is fine for medicine but too warm for chilled food: it alerts immediately. A new truck is never unprotected: an empty range means the strictest default." Then click <b>Use default</b>.</div>
+</div>
+
+<div class="step">
+<h3>Step 6: Live: a new truck has a problem</h3>
+<pre>$readings = 30,35,40,45,50 | ForEach-Object { @{ truck_id = "T-09"; timestamp = "2026-07-20T08:$($_):00"; temperature_c = 9.4; humidity_pct = 60 } }
+$body = @{ readings = @($readings) } | ConvertTo-Json -Depth 4
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/readings -Headers @{ "X-API-Key" = "&lt;admin key&gt;" } -ContentType "application/json" -Body $body</pre>
+<div class="say"><b>Show:</b> T-09 (never seen before) is registered, alerts on the dashboard and arrives in Discord. <b>Run it again:</b> nothing new is sent. "Each alert is sent once, and that's stored in the database, so a restart never resends." (The first upload also delivers the 3 seed alerts, which the server hadn't sent yet.)</div>
+</div>
+
+<div class="step">
+<h3>Step 7: Ask about the fleet (MCP)</h3>
+<p>In the <b>Ask about the fleet</b> box: <i>"Which trucks are in trouble right now?"</i>, then <i>"What happened to T-04 in the last 30 minutes?"</i></p>
+<div class="say"><b>Say:</b> "Our backend is an MCP client. Groq gets the list of our MCP tools, picks one, and it runs through our MCP server on live data. The tools used are shown under the answer. They're read-only, and every number in the answer is checked against the tool results."</div>
+<div class="tip">Use the <b>local</b> server for this step: the Ask box has a known packaging issue on Cloud Run (see section 5). Backup: <code>npx @modelcontextprotocol/inspector .venv\Scripts\python -m backend.mcp_server</code> → click get_fleet_status.</div>
+</div>
+
+<div class="step">
+<h3>Step 8 (if asked): proof it works</h3>
+<pre>.\.venv\Scripts\python -m pytest</pre>
+<p class="small">221 tests: 212 Python unit + integration (97% coverage), 7 dashboard tests, 2 end-to-end browser tests. They caught 5 real bugs, including the HTTP library logging the secret webhook URL. Details: docs/TESTING.md.</p>
+</div>
+
+<h2>5. Limits and next steps (2 min)</h2>
+<table>
+  <tr><th style="width:50%">Limit today</th><th>Next step</th></tr>
+  <tr><td>Batch / upload, not streaming</td><td>Streaming ingestion (Pub/Sub) with late-data handling (designed in SOLUTION_DESIGN §4)</td></tr>
+  <tr><td>Readings kept in memory in the API (sent ids and truck ranges are in the database)</td><td>Store readings in PostgreSQL; allow more than one instance</td></tr>
+  <tr><td>Ranges set per truck by ops</td><td>Range per shipment from the dispatch system; optional humidity limit</td></tr>
+  <tr><td>Impossible readings flagged but not notified</td><td>"Sensor fault" status with one notification</td></tr>
+  <tr><td>One shared admin key; no logins</td><td>Single sign-on in front of Cloud Run; per-user audit</td></tr>
+  <tr><td>Ask box on Cloud Run: the MCP helper process can't see the installed packages</td><td>Pass the full environment to the MCP subprocess (one-line fix) and redeploy</td></tr>
+  <tr><td>Tests run on Python 3.12; the cloud builds with 3.13</td><td>Add 3.13 to the test run</td></tr>
+</table>
+
+<h2 class="pb">6. APIs (for reference)</h2>
+<table>
+  <tr><th style="width:42%">Endpoint</th><th>Purpose</th><th style="width:12%">Key?</th></tr>
+  <tr><td><code>GET /health</code></td><td>Liveness check</td><td>No</td></tr>
+  <tr><td><code>GET /api/report</code></td><td>Everything: trucks, alerts, notifications with AI summaries, data quality</td><td>No</td></tr>
+  <tr><td><code>GET /api/trucks</code>, <code>GET /api/trucks/{id}</code></td><td>Fleet states; one truck's readings and alerts</td><td>No</td></tr>
+  <tr><td><code>GET /api/alerts?status=open|recovering|closed</code></td><td>Alerts with reasons</td><td>No</td></tr>
+  <tr><td><code>GET /api/notifications</code></td><td>Notifications, AI summary, whether sent</td><td>No</td></tr>
+  <tr><td><code>GET /api/ranges</code></td><td>Every registered truck, its own range (or empty) and when it was added</td><td>No</td></tr>
+  <tr><td><code>POST /api/ask</code></td><td>Question answered by Groq via our MCP tools (20/min)</td><td>No</td></tr>
+  <tr><td><code>POST /api/readings</code></td><td>Upload readings (max 5,000 / 2 MB); optional ranges for new trucks</td><td>Yes</td></tr>
+  <tr><td><code>PUT /api/trucks/{id}/range</code></td><td>Set or clear a truck's own range</td><td>Yes</td></tr>
+  <tr><td><code>POST /api/reset</code></td><td>Reload the seed data (demo)</td><td>Yes</td></tr>
+  <tr><td><code>/docs</code></td><td>Interactive API documentation (FastAPI)</td><td>No</td></tr>
+</table>
+<p><b>MCP tools</b> (read-only): get_fleet_status, get_open_alerts, get_all_alerts, get_truck_history(truck_id, minutes 1–1440), get_alert(alert_id).</p>
+<p><b>Tech stack:</b> Python (FastAPI, Pydantic, SQLAlchemy) on PostgreSQL; React + TypeScript + Vite; Groq <code>openai/gpt-oss-20b</code> with Gemini fallback; official MCP SDK; Discord webhook; Google Cloud Run, Cloud SQL, Secret Manager; pytest, vitest, Playwright, ruff, pip-audit.</p>
+
+<h2>7. Likely "what if…" questions</h2>
+<table>
+  <tr><th style="width:34%">Question</th><th>Short answer</th></tr>
+  <tr><td>Why 20 minutes?</td><td>On this data any limit from 10 to 20 is correct: 5 alerts on T-04's blip, 25 misses T-04. 20 is the most patient correct value, ignores door openings, and still has 3 real readings if one is missing. It's one config value.</td></tr>
+  <tr><td>What if data arrives late or out of order?</td><td>We sort by sensor time before any rule runs (T-05). Live: a late reading is put in its place and that truck re-evaluated; over 60 min late is logged but doesn't change alerts; sent alerts are marked "revised", never deleted.</td></tr>
+  <tr><td>What if the sensor goes silent?</td><td>Not treated as hot (that would bring back the noise and fake data). "Sensor silent" after 15 min, one notification at 30 min, or at 15 min as Critical if the truck was already warm.</td></tr>
+  <tr><td>What if a truck carries frozen food?</td><td>Set that truck's range (−25 to −18 °C) in the dashboard; no code change. Shown in step 5.</td></tr>
+  <tr><td>How do you avoid repeat alerts?</td><td>One alert per episode with a fixed id stored in the database; updates only if not improving; at most one Critical.</td></tr>
+  <tr><td>What if the AI invents something?</td><td>The AI never decides. Every number/time it writes is checked against the facts; any mismatch, error or 5 s timeout sends the plain message.</td></tr>
+  <tr><td>What if Discord is down?</td><td>5 s timeout, 3 retries, logged; not marked sent, so it's retried next run. The alert is always on the dashboard.</td></tr>
+  <tr><td>Why not ML or a rolling average?</td><td>54 readings can't train a model and ops can't see why it fired. A rolling average hides spikes and still flaps. The state machine is explainable and testable.</td></tr>
+  <tr><td>How is it secured?</td><td>Secrets in Secret Manager / .env only; writes need an admin key (constant-time compare); input validation and size limits; HTTPS-only webhook; tests found and fixed the webhook URL leaking into logs and the DB password showing in settings output.</td></tr>
+  <tr><td>Why MCP?</td><td>The fleet data is exposed once as read-only tools; any MCP-capable AI (Claude, or Groq in our dashboard) answers from live data instead of guessing, and can't change anything.</td></tr>
+  <tr><td>How would it scale?</td><td>Engine is per truck and stateless per evaluation; move readings to the database, ingest via Pub/Sub, run several Cloud Run instances.</td></tr>
+</table>
+
+<h2>8. If something breaks during the demo</h2>
+<ul>
+  <li><b>Server down:</b> restart Terminal 1; or switch to the live Cloud Run URL.</li>
+  <li><b>Discord silent:</b> run <code>python -m backend.cli --send</code> without a webhook to show the console output; the dashboard still shows every alert.</li>
+  <li><b>Groq down:</b> say so: alerts still go out with the plain message (that's the design). Ask box shows "AI service unavailable".</li>
+  <li><b>Data in a strange state:</b> run the reset command from the checklist.</li>
+</ul>
+
+</body>
+</html>
