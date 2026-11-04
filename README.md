@@ -102,19 +102,26 @@ Invoke-RestMethod "$U/api/alerts?status=open" | Select-Object truck_id, reason |
 ```
 Expected: T-01 closed, T-05 closed, **T-04 recovering** ("Above 8 °C for 20 min (08:25–08:45), peak 9.1 °C. Includes missing data: 08:30–08:40 (10 min).").
 
-### 4. On Google Cloud: change one truck's range, see a new alert, undo it
+### 4. Change one truck's range in the dashboard, see a new alert, undo it
+
+Open the dashboard (http://127.0.0.1:8000 or the live link) and scroll to **Truck ranges**:
+
+1. Click the **T-03** row (its id fills the form).
+2. Enter min `0` and max `5` (chilled food).
+3. Enter the admin key and click **Save range**.
+4. The message reads "T-03 range saved. Alerts re-checked.", the fleet table shows T-03 at **0 to 5 °C (own)**, and a new alert appears: **T-03: "Above 5 °C for 50 min (08:00–08:50), peak 7 °C."**
+5. To undo: click **T-03**, then **Use default**. T-03 is back on 2–8 °C and its alert disappears.
+
+Without the admin key the change is refused ("Wrong or missing admin key").
+
+The same change through the API, as an alternative:
 
 ```powershell
 $key = @{ "X-API-Key" = "<your ADMIN_API_KEY>" }
-
 Invoke-RestMethod -Method Put "$U/api/trucks/T-03/range" -Headers $key -ContentType "application/json" -Body '{"min_safe_c": 0, "max_safe_c": 5}'
 Invoke-RestMethod "$U/api/alerts?status=open" | Select-Object truck_id, reason | Format-Table -Wrap
-
 Invoke-RestMethod -Method Put "$U/api/trucks/T-03/range" -Headers $key -ContentType "application/json" -Body '{"min_safe_c": null, "max_safe_c": null}'
 ```
-Expected after setting the range: **T-03: "Above 5 °C for 50 min (08:00–08:50), peak 7 °C."** The last command puts T-03 back on the default 2–8 °C.
-
-The same change can be made on the dashboard (open the live link, **Truck ranges** panel). Without the key the API answers 401.
 
 ## Demo: step by step
 
