@@ -35,11 +35,10 @@ Alerts the ops team **once per real, sustained temperature problem on a truck**:
 
 ```powershell
 python -m venv .venv; .\.venv\Scripts\python -m pip install -r requirements-dev.txt
-.\.venv\Scripts\python -m backend.cli                       # the alert report on the seed data
-.\.venv\Scripts\python -m backend.cli --alert-after-min 25  # "what if": T-04 drops out
-.\.venv\Scripts\python -m pytest                            # 212 tests, 97% coverage
+.\.venv\Scripts\python -m backend.cli
+.\.venv\Scripts\python -m backend.cli --alert-after-min 25
+.\.venv\Scripts\python -m pytest
 ```
-
 No keys are needed: without `.env`, alerts print to the console and the AI uses mock mode.
 
 ## Trade-offs and gaps
@@ -69,7 +68,6 @@ Run from the project folder in PowerShell. Expected results are shown under each
 ```powershell
 .\.venv\Scripts\python -m backend.cli
 ```
-
 ```
 ALERTS (3)
   [WARNING] T-01  Above 8 °C for 30 min (08:10–08:40), peak 9.6 °C.
@@ -79,7 +77,6 @@ NO ALERT (2)
   T-02  one reading out of range (8.9 °C at 08:10), under the 20-min limit
   T-03  never outside 2–8 °C
 ```
-
 Send the same 3 alerts to Discord `#ops-alerts` (AI-worded): `.\.venv\Scripts\python -m backend.cli --ai --send`
 
 ### 2. Change the range or the time limit: the alerts change
@@ -96,17 +93,13 @@ Send the same 3 alerts to Discord `#ops-alerts` (AI-worded): `.\.venv\Scripts\py
 ```powershell
 $U = "https://cold-chain-alerts-78623167451.asia-south1.run.app"
 
-# Every truck and its state (ok / suspect / alert / recovering)
 Invoke-RestMethod "$U/api/trucks" | Select-Object truck_id, state, last_temperature_c, min_safe_c, max_safe_c | Format-Table
 
-# Every alert with its reason
 Invoke-RestMethod "$U/api/alerts" | Select-Object truck_id, status, severity, reason | Format-Table -Wrap
 
-# Only the trucks that still need attention
 Invoke-RestMethod "$U/api/alerts?status=recovering" | Select-Object truck_id, reason | Format-Table -Wrap
 Invoke-RestMethod "$U/api/alerts?status=open" | Select-Object truck_id, reason | Format-Table -Wrap
 ```
-
 Expected: T-01 closed, T-05 closed, **T-04 recovering** ("Above 8 °C for 20 min (08:25–08:45), peak 9.1 °C. Includes missing data: 08:30–08:40 (10 min).").
 
 ### 4. On Google Cloud: change one truck's range, see a new alert, undo it
@@ -114,15 +107,11 @@ Expected: T-01 closed, T-05 closed, **T-04 recovering** ("Above 8 °C for 20 min
 ```powershell
 $key = @{ "X-API-Key" = "<your ADMIN_API_KEY>" }
 
-# T-03 (5.8–7.0 °C) gets a chilled-food range of 0–5 °C
 Invoke-RestMethod -Method Put "$U/api/trucks/T-03/range" -Headers $key -ContentType "application/json" -Body '{"min_safe_c": 0, "max_safe_c": 5}'
 Invoke-RestMethod "$U/api/alerts?status=open" | Select-Object truck_id, reason | Format-Table -Wrap
-#   -> T-03  Above 5 °C for 50 min (08:00–08:50), peak 7 °C.
 
-# Undo: back to the default 2–8 °C
 Invoke-RestMethod -Method Put "$U/api/trucks/T-03/range" -Headers $key -ContentType "application/json" -Body '{"min_safe_c": null, "max_safe_c": null}'
 ```
-
 The same change can be made on the dashboard (open the live link, **Truck ranges** panel). Without the key the API answers 401.
 
 ## Demo: step by step
@@ -137,7 +126,6 @@ python -m venv .venv
 cd frontend; npm install; npm run build; cd ..
 Copy-Item .env.example .env
 ```
-
 Then open `.env` and fill in:
 
 | Setting | Needed for | Without it |
@@ -152,7 +140,6 @@ Then open `.env` and fill in:
 ```powershell
 .\.venv\Scripts\python -m backend.cli
 ```
-
 Point out: **3 alerts** (T-01, T-04, T-05) out of 21 warm readings, and a reason for every truck. T-02 was a one-reading blip; T-03 never left the range; T-04 alerted across a missing reading; T-05 was shuffled in the file.
 
 ### 3. A "what if" (tricky input)
@@ -160,7 +147,6 @@ Point out: **3 alerts** (T-01, T-04, T-05) out of 21 warm readings, and a reason
 ```powershell
 .\.venv\Scripts\python -m backend.cli --alert-after-min 25
 ```
-
 T-04 drops out: it was out of range for exactly 20 minutes. This is why the limit is 20.
 
 ### 4. Alerts reach the ops team (Discord)
@@ -168,7 +154,6 @@ T-04 drops out: it was out of range for exactly 20 minutes. This is why the limi
 ```powershell
 .\.venv\Scripts\python -m backend.cli --ai --send
 ```
-
 Show `#ops-alerts`: three messages, AI-worded with a likely cause and the exact facts underneath. Only one message per problem.
 
 ### 5. The ops dashboard
@@ -176,7 +161,6 @@ Show `#ops-alerts`: three messages, AI-worded with a likely cause and the exact 
 ```powershell
 .\.venv\Scripts\python -m uvicorn backend.main:app --port 8000
 ```
-
 Open http://127.0.0.1:8000 (leave this terminal running and use a second one for the next steps).
 
 - The red banner shows the open alert (T-04, recovering).
@@ -196,7 +180,6 @@ $readings = 30,35,40,45,50 | ForEach-Object { @{ truck_id = "T-09"; timestamp = 
 $body = @{ readings = @($readings) } | ConvertTo-Json -Depth 4
 Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/readings -Headers @{ "X-API-Key" = "<your ADMIN_API_KEY>" } -ContentType "application/json" -Body $body
 ```
-
 T-09 (never seen before) is registered automatically, warm for 20 minutes, so it alerts. It appears on the dashboard within 20 seconds and in Discord. (The first upload also delivers the 3 seed alerts, because the server sends each alert once and hasn't sent those yet.) Run the same command again: nothing new is sent.
 
 To start over: `Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/reset -Headers @{ "X-API-Key" = "<your ADMIN_API_KEY>" }`
@@ -217,18 +200,15 @@ Backup without AI: `npx @modelcontextprotocol/inspector .venv\Scripts\python -m 
 cd frontend; npm test; cd ..
 .\.venv\Scripts\python -m pytest tests_e2e --browser-channel chrome --no-cov
 ```
-
 221 tests: unit, integration and end-to-end. See [docs/TESTING.md](docs/TESTING.md).
 
 ## How it works
-
 ```
 readings ─► Loader (validate, flag impossible temps, dedupe, SORT by sensor time)
          ─► State machine per truck: OK → SUSPECT → ALERT → RECOVERING → OK
          ─► alerts + notifications (fixed ids, so each is sent once)
          ─► CLI report · Discord/Slack webhook · optional AI wording
 ```
-
 - **Alert** after **20 min** out of the **2–8 °C** range, measured from sensor timestamps.
 - **Recovered** only after **10 min back in range**, seen by 2 readings. A single dip doesn't reset or close anything.
 - **Gaps** of up to 15 min are bridged and reported in the alert. A longer silence gets its own "sensor silent" notification.
@@ -243,17 +223,13 @@ Needs Python 3.12 locally (Windows PowerShell shown). The Cloud Run build uses P
 python -m venv .venv
 .\.venv\Scripts\python -m pip install -r requirements.txt -r requirements-dev.txt
 
-# Report on the seed data: what I'd alert on, and why
 .\.venv\Scripts\python -m backend.cli
 
-# Same as JSON, or try another limit
 .\.venv\Scripts\python -m backend.cli --json
 .\.venv\Scripts\python -m backend.cli --alert-after-min 25
 
-# Any readings file; --now sets the evaluation time (shows silent sensors)
 .\.venv\Scripts\python -m backend.cli path\to\readings.json --now 2026-07-20T09:30:00
 ```
-
 ### Send alerts to Discord (or Slack)
 
 1. In Discord: your server → channel `#ops-alerts` → ⚙️ Edit Channel → Integrations → Webhooks → New Webhook → **Copy Webhook URL**.
@@ -261,10 +237,9 @@ python -m venv .venv
 3. Run:
 
 ```powershell
-.\.venv\Scripts\python -m backend.cli --send        # plain rule-based messages
-.\.venv\Scripts\python -m backend.cli --ai --send   # AI-worded, with the facts underneath
+.\.venv\Scripts\python -m backend.cli --send
+.\.venv\Scripts\python -m backend.cli --ai --send
 ```
-
 Without a URL, `--send` prints the messages to the console instead.
 
 ### AI summaries (optional)
@@ -278,9 +253,7 @@ Set `LLM_PROVIDER=groq` (and optionally `LLM_FALLBACK_PROVIDER=gemini`) with the
 ```powershell
 cd frontend; npm install; npm run build; cd ..
 .\.venv\Scripts\python -m uvicorn backend.main:app --port 8000
-# open http://127.0.0.1:8000   (API docs: http://127.0.0.1:8000/docs)
 ```
-
 | Endpoint | Purpose |
 |---|---|
 | `GET /health` | Liveness |
@@ -316,16 +289,14 @@ Real answers from the seed data: *"T-04 is in recovering state. No other trucks 
 **221 automated tests:** 212 Python (unit + integration), 7 frontend and 2 end-to-end in real Chrome. 97% Python coverage, plus live checks against Discord and Groq. Details, and what each level proves: **[docs/TESTING.md](docs/TESTING.md)**.
 
 ```powershell
-.\.venv\Scripts\python -m pytest                       # unit + integration
-cd frontend; npm run typecheck; npm test; cd ..        # UI
-.\.venv\Scripts\python -m pytest tests_e2e --browser-channel chrome --no-cov   # end-to-end
+.\.venv\Scripts\python -m pytest
+cd frontend; npm run typecheck; npm test; cd ..
+.\.venv\Scripts\python -m pytest tests_e2e --browser-channel chrome --no-cov
 .\.venv\Scripts\ruff check .; .\.venv\Scripts\pip-audit -r requirements.txt
 ```
-
 Tests never make real network calls: the webhook is forced off and the LLM to mock. They caught 5 real bugs, including the HTTP library logging the secret webhook URL and the settings object printing the database password.
 
 ## Project layout
-
 ```
 backend/engine/   loader, config (all thresholds), state machine — pure Python, no I/O
 backend/notify/   console + webhook senders, send-once dispatcher, payload
@@ -338,7 +309,6 @@ frontend/src/     React + TypeScript dashboard (SVG chart, no chart library)
 tests/            unit + integration (pytest)   tests_e2e/  browser end-to-end
 docs/             assumptions, testing, screenshots
 ```
-
 ## Known limitations
 
 - **Batch, not streaming:** v1 evaluates a whole file. Live ingestion with late-data handling is designed (SOLUTION_DESIGN.md §4) but not built.
