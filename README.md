@@ -24,6 +24,98 @@ Alerts the ops team **once per real, sustained temperature problem on a truck**:
 
 Three alerts, three notifications, and a stated reason for every truck, including why T-02 and T-03 did *not* alert.
 
+## Demo: step by step
+
+Windows PowerShell, from the project folder. About 10 minutes.
+
+### 1. One-time setup
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python -m pip install -r requirements-dev.txt
+cd frontend; npm install; npm run build; cd ..
+Copy-Item .env.example .env
+```
+
+Then open `.env` and fill in:
+
+| Setting | Needed for | Without it |
+|---|---|---|
+| `ALERT_WEBHOOK_URL` | Alerts in Discord (`#ops-alerts` → Edit Channel → Integrations → Webhooks → Copy URL) | Messages print in the terminal |
+| `LLM_PROVIDER=groq`, `GROQ_API_KEY`, `GROQ_MODEL=openai/gpt-oss-20b` | AI-worded alerts | `mock` wording |
+| `ADMIN_API_KEY` | Protects changes (upload, truck ranges) | Changes need no key |
+| `DATABASE_URL` | PostgreSQL | Local SQLite file in `data/` |
+
+### 2. The problem and the answer (CLI)
+
+```powershell
+.\.venv\Scripts\python -m backend.cli
+```
+
+Point out: **3 alerts** (T-01, T-04, T-05) out of 21 warm readings, and a reason for every truck. T-02 was a one-reading blip; T-03 never left the range; T-04 alerted across a missing reading; T-05 was shuffled in the file.
+
+### 3. A "what if" (tricky input)
+
+```powershell
+.\.venv\Scripts\python -m backend.cli --alert-after-min 25
+```
+
+T-04 drops out: it was out of range for exactly 20 minutes. This is why the limit is 20.
+
+### 4. Alerts reach the ops team (Discord)
+
+```powershell
+.\.venv\Scripts\python -m backend.cli --ai --send
+```
+
+Show `#ops-alerts`: three messages, AI-worded with a likely cause and the exact facts underneath. Only one message per problem.
+
+### 5. The ops dashboard
+
+```powershell
+.\.venv\Scripts\python -m uvicorn backend.main:app --port 8000
+```
+
+Open http://127.0.0.1:8000 (leave this terminal running and use a second one for the next steps).
+
+- The red banner shows the open alert (T-04, recovering).
+- Click **T-04** in the fleet table to see the chart: green band = safe range, red = alert period, with the 08:30–08:40 data gap.
+- The alert cards show the reason and the labelled AI summary.
+
+### 6. Each truck's own range
+
+In **Truck ranges**: every truck was added automatically with an empty range (default 2–8 °C). Click **T-03**, enter min `0` and max `5` (chilled food), enter the admin key and click **Save range**. T-03 immediately gets an "Above 5 °C" alert. Click **Use default** to undo.
+
+### 7. Live: a new truck has a problem
+
+In a second terminal (use your `ADMIN_API_KEY`):
+
+```powershell
+$readings = 30,35,40,45,50 | ForEach-Object { @{ truck_id = "T-09"; timestamp = "2026-07-20T08:$($_):00"; temperature_c = 9.4; humidity_pct = 60 } }
+$body = @{ readings = @($readings) } | ConvertTo-Json -Depth 4
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/readings -Headers @{ "X-API-Key" = "<your ADMIN_API_KEY>" } -ContentType "application/json" -Body $body
+```
+
+T-09 (never seen before) is registered automatically, warm for 20 minutes, so it alerts. It appears on the dashboard within 20 seconds and in Discord. (The first upload also delivers the 3 seed alerts, because the server sends each alert once and hasn't sent those yet.) Run the same command again: nothing new is sent.
+
+To start over: `Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/reset -Headers @{ "X-API-Key" = "<your ADMIN_API_KEY>" }`
+
+### 8. Ask an AI assistant (MCP)
+
+Open a **new** Claude Code chat in this folder (it reads `.mcp.json` at start), type `/mcp` and approve **cold-chain**, then ask *"Which trucks are in trouble right now?"*. It answers from the real data through read-only tools.
+
+Backup without AI: `npx @modelcontextprotocol/inspector .venv\Scripts\python -m backend.mcp_server`, then click **get_fleet_status**.
+
+### 9. Proof it works (tests)
+
+```powershell
+.\.venv\Scripts\python -m pytest
+cd frontend; npm test; cd ..
+.\.venv\Scripts\python -m pytest tests_e2e --browser-channel chrome --no-cov
+```
+
+203 tests: unit, integration and end-to-end. See [docs/TESTING.md](docs/TESTING.md).
+
 ## How it works
 
 ```
