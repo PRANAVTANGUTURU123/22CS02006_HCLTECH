@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     max_upload_readings: int = Field(default=5000, gt=0, le=50000)
     max_upload_bytes: int = Field(default=2_000_000, gt=0)
     cors_origins: list[str] = Field(default_factory=list)
+    # If set, POST endpoints (upload, reset) need header X-API-Key with this value.
+    # Reading the dashboard stays open. Always set it on a public deployment.
+    admin_api_key: SecretStr | None = None
     frontend_dist: Path = PROJECT_ROOT / "frontend" / "dist"
 
     # Discord / Slack incoming webhook. Empty = print notifications to the console instead.

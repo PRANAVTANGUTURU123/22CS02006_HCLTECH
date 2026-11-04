@@ -1,11 +1,12 @@
 """HTTP API over the engine. The server entry point is backend/main.py."""
 from __future__ import annotations
 
+import hmac
 import logging
 import threading
 from typing import Any, Literal
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -88,6 +89,14 @@ def create_app(
             CORSMiddleware, allow_origins=settings.cors_origins, allow_methods=["GET", "POST"]
         )
 
+    admin_key = (
+        settings.admin_api_key.get_secret_value() if settings.admin_api_key is not None else ""
+    )
+
+    def require_key(x_api_key: str | None = Header(default=None)) -> None:
+        if admin_key and not hmac.compare_digest(x_api_key or "", admin_key):
+            raise HTTPException(401, "missing or wrong X-API-Key")
+
     @app.middleware("http")
     async def limit_body_size(request: Request, call_next):
         length = request.headers.get("content-length")
@@ -144,7 +153,7 @@ def create_app(
             out.append(item)
         return out
 
-    @app.post("/api/readings")
+    @app.post("/api/readings", dependencies=[Depends(require_key)])
     def upload(body: ReadingsUpload) -> dict[str, Any]:
         if len(body.readings) > settings.max_upload_readings:
             raise HTTPException(413, f"at most {settings.max_upload_readings} readings per upload")
@@ -164,7 +173,7 @@ def create_app(
             "failed": [r.notification_id for r in results if r.status == "failed"],
         }
 
-    @app.post("/api/reset")
+    @app.post("/api/reset", dependencies=[Depends(require_key)])
     def reset() -> dict[str, int]:
         """Reload the seed data (for demos). Sends nothing."""
         fleet.replace(load_raw_file(settings.readings_path))

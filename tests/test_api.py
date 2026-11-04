@@ -131,3 +131,14 @@ def test_upload_that_moves_time_forward_reports_silent_sensors(client):
     data = client.post("/api/readings", json={"readings": [reading("T-09", 20, 6.0)]}).json()
     # Now is 09:20: the five seed trucks last reported at 08:50, 30 min ago.
     assert len([s for s in data["sent"] if ":silent:" in s]) == 5
+
+
+def test_writes_need_the_admin_key_when_set(tmp_path, sender):
+    settings = Settings(_env_file=None, frontend_dist=tmp_path / "no-ui", admin_api_key="s3cret")
+    client = TestClient(create_app(settings, sender, InMemorySentStore(), MockLLM()))
+    body = {"readings": [reading("T-09", 0, 6.0)]}
+    assert client.post("/api/readings", json=body).status_code == 401
+    assert client.post("/api/readings", json=body, headers={"X-API-Key": "wrong"}).status_code == 401
+    assert client.post("/api/reset").status_code == 401
+    assert client.post("/api/readings", json=body, headers={"X-API-Key": "s3cret"}).status_code == 200
+    assert client.get("/api/report").status_code == 200  # reading stays open

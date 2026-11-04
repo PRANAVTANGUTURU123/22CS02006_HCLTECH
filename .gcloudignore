@@ -1,0 +1,23 @@
+# What `gcloud run deploy --source .` does NOT upload. Built by Google buildpacks (no Dockerfile).
+# Never ship secrets or local environments.
+.env
+.env.*
+!.env.example
+.venv/
+**/node_modules/
+**/__pycache__/
+.git/
+.gitignore
+.pytest_cache/
+.ruff_cache/
+.coverage
+data/
+__MACOSX/
+.playwright-mcp/
+HANDOFF.md
+tests/
+tests_e2e/
+docs/
+scripts/
+# frontend/dist IS uploaded: build it first with `npm run build` in frontend/.
+frontend/src/
