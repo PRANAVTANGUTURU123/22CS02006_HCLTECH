@@ -1,5 +1,5 @@
 [project]
-name = "hackathon-starter"
+name = "cold-chain-alerting"
 version = "0.1.0"
 requires-python = ">=3.12,<3.13"
 
@@ -8,11 +8,8 @@ pythonpath = ["."]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-addopts = "-q --cov=backend --cov=scripts --cov-report=term-missing:skip-covered"
-filterwarnings = ["ignore::DeprecationWarning:chromadb.*"]
+addopts = "-q --cov=backend --cov-report=term-missing:skip-covered"
 
-[tool.coverage.run]
-omit = ["scripts/*"]
 
 [tool.ruff]
 line-length = 100
@@ -24,4 +21,4 @@ select = ["E", "F", "I", "B", "UP", "S", "ASYNC"]
 ignore = ["S101", "B008"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["S105", "S106", "S324", "E501"]
+"tests/*" = ["S105", "S106", "S311", "S324", "E501"]
