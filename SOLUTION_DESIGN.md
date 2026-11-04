@@ -110,7 +110,7 @@ There are three channels, each with one job:
 
 | Part | Choice | Why |
 |---|---|---|
-| Engine and CLI | Python 3.12, plain functions plus a config file | Simple, easy to test, runs without a server |
+| Engine and CLI | Python 3.12 locally (Cloud Run builds with 3.13), plain functions plus a config file | Simple, easy to test, runs without a server |
 | API | FastAPI + Pydantic | Validates uploaded readings; `/health`, `/api/trucks`, `/api/alerts`, upload endpoint |
 | Storage | SQLAlchemy + PostgreSQL 16 (Cloud SQL in production) | Keeps alert history and sent-notification ids across restarts; portable SQL with bound parameters |
 | Webhook | httpx + tenacity | Timeouts and retries out of the box |

@@ -2,15 +2,51 @@
 
 Alerts the ops team **once per real, sustained temperature problem on a truck**: not on every warm reading, not on brief blips, and not over and over for the same problem. It stays correct when readings go missing or arrive out of order.
 
-- **Design and reasoning:** [SOLUTION_DESIGN.md](SOLUTION_DESIGN.md) · every assumption with its reason: [docs/ASSUMPTIONS.md](docs/ASSUMPTIONS.md) · build log: [PROGRESS.md](PROGRESS.md)
+- **Design document:** `SOLUTION_DESIGN.pdf` (problem, assumptions, design, trade-offs, next steps, testing, screenshots). Markdown sources: `SOLUTION_DESIGN.md`, `docs/ASSUMPTIONS.md`, `docs/TESTING.md` on GitHub.
+- **Live:** https://cold-chain-alerts-78623167451.asia-south1.run.app (Cloud Run; reads are open, changes need an admin key)
+- **Code:** https://github.com/PRANAVTANGUTURU123/22CS02006_HCLTECH
 
-![Alerts from the seed data arriving in the #ops-alerts Discord channel](docs/images/discord-alerts.png)
+## What I built
 
-*The three alerts from the seed data, delivered to a Discord `#ops-alerts` channel by the webhook notifier.*
+- **Rules engine** (pure Python): cleans and sorts readings, then runs one state machine per truck: OK → SUSPECT → ALERT → RECOVERING → OK. It alerts after **20 min out of 2–8 °C** (by sensor timestamps), closes after **10 min back in range**, bridges gaps up to 15 min, and flags silent sensors.
+- **CLI report:** "what I'd alert on, and why", including why the other trucks did *not* alert.
+- **Webhook notifier** (Discord/Slack): each alert is sent **once** (fixed ids, stored in the database), with a 5 s timeout and 3 retries.
+- **AI summary (bonus):** an LLM words the alert in one line; the rules decide. Every number it writes is checked, and if it fails the plain message is sent.
+- **FastAPI API + React dashboard**, deployed on **Google Cloud Run**, plus a read-only **MCP server** so an AI assistant can answer "which trucks are in trouble?".
 
-![Ops dashboard: fleet states, T-04 temperature chart with the alert period shaded, alerts with AI summaries](docs/images/dashboard.png)
+## Requirement → where it is
 
-*The ops dashboard (FastAPI + React): fleet states, T-04's chart with the 2–8 °C band and the alert period shaded, and alerts with reasons and labelled AI summaries.*
+| Requirement (brief) | Where |
+|---|---|
+| Alert only on a sustained issue, per truck | `backend/engine/state_machine.py`, thresholds in `backend/engine/config.py` |
+| Ignore brief blips | `state_machine.py` (SUSPECT resets after 10 min in range); `tests/test_state_machine.py` |
+| Don't re-alert the same ongoing issue | Fixed notification ids: `state_machine.py`, `backend/notify/dispatcher.py`, `backend/store.py` |
+| Handle gaps in data | `state_machine.py` (gap bridging, "sensor silent") |
+| Handle out-of-order data and duplicates | `backend/engine/loader.py` (validate, dedupe, sort by sensor time) |
+| Runs end-to-end, prints "what I'd alert on, and why" | `backend/cli.py`, `backend/report.py` |
+| Assumptions documented | `SOLUTION_DESIGN.pdf` §3 and appendix A |
+| Bonus: LLM one-line summary | `backend/ai/summarizer.py`, `backend/ai/llm.py` |
+| Security (admin key, size limits, secrets) | `backend/api.py`, `backend/settings.py` |
+| Tests | `tests/` (212), `frontend/src/App.test.tsx` (7), `tests_e2e/` (2) |
+
+**Key files, in reading order:** `backend/engine/state_machine.py`, `backend/engine/loader.py`, `backend/engine/config.py`, `backend/engine/models.py`, `backend/report.py`, `backend/cli.py`, `backend/notify/dispatcher.py`, `backend/ai/summarizer.py`, `backend/api.py`, `backend/mcp_server.py`, `tests/test_state_machine.py`, `tests/test_seed_data.py`.
+
+## Run and test (quick)
+
+```powershell
+python -m venv .venv; .\.venv\Scripts\python -m pip install -r requirements-dev.txt
+.\.venv\Scripts\python -m backend.cli                       # the alert report on the seed data
+.\.venv\Scripts\python -m backend.cli --alert-after-min 25  # "what if": T-04 drops out
+.\.venv\Scripts\python -m pytest                            # 212 tests, 97% coverage
+```
+
+No keys are needed: without `.env`, alerts print to the console and the AI uses mock mode.
+
+## Trade-offs and gaps
+
+- **Duration-based state machine** over a rolling average (hides spikes, still flaps) or ML (54 readings isn't enough, and ops can't see *why*). The cost: an alert can't fire before 20 min.
+- **20 min, not 25:** T-04 is out of range for exactly 20 min, so 25 would miss a real failure. It's one config value.
+- **Not built:** streaming ingestion and late-data handling (designed only), sensor-fault notifications, per-user logins, ranges per shipment. Readings live in memory in the API (sent ids are in the database). The cloud runs Python 3.13; tests were run on 3.12.
 
 ## What it decides on the seed data
 
