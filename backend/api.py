@@ -275,7 +275,11 @@ def create_app(
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from None
         fleet.refresh()
-        return range_dict(row)
+        results = dispatch(fleet.report.notifications, sender, store, fleet.summary_for)
+        return {
+            **range_dict(row),
+            "sent": [r.notification_id for r in results if r.status == "sent"],
+        }
 
     @app.post("/api/ask")
     def ask(body: AskIn, request: Request) -> dict[str, Any]:

@@ -151,3 +151,23 @@ def test_range_changes_need_the_key_and_valid_input(client):
     assert bad.status_code == 422 and "min_safe_c must be below" in bad.json()["detail"]
     assert client.put("/api/trucks/T-03/range", json={"min_safe_c": -99, "max_safe_c": 5}, headers=KEY).status_code == 422
     assert client.put("/api/trucks/T-03/range", json={"min_safe_c": 0}, headers=KEY).status_code == 422
+
+
+def test_range_change_sends_new_alerts_once(tmp_path):
+    sent = []
+
+    class Sender:
+        name = "fake"
+
+        def send(self, payload):
+            sent.append(payload["notification_id"])
+
+    settings = Settings(_env_file=None, frontend_dist=tmp_path / "no-ui", admin_api_key="k")
+    client = TestClient(create_app(settings, sender=Sender(), store=InMemorySentStore(), llm=MockLLM()))
+    body = {"min_safe_c": 0, "max_safe_c": 5}
+    first = client.put("/api/trucks/T-03/range", json=body, headers=KEY).json()
+    assert any(s.startswith("T-03:") for s in first["sent"])
+    assert any(s.startswith("T-03:") for s in sent)
+    client.put("/api/trucks/T-03/range", json={"min_safe_c": None, "max_safe_c": None}, headers=KEY)
+    again = client.put("/api/trucks/T-03/range", json=body, headers=KEY).json()
+    assert again["sent"] == []

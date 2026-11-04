@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 import sys
 from dataclasses import dataclass, field
@@ -138,7 +139,8 @@ async def ask_with_session(
 async def ask_via_mcp(
     question: str, llm: ChatLLM, api_url: str | None, time_limit: float = 25.0
 ) -> Answer:
-    env = get_default_environment()
+    # The full environment: on Cloud Run the installed packages are found through it.
+    env = {**get_default_environment(), **os.environ}
     if api_url:
         env["COLD_CHAIN_API_URL"] = api_url
     params = StdioServerParameters(
