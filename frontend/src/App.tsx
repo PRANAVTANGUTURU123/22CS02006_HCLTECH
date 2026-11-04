@@ -94,8 +94,7 @@ export default function App() {
           <h1>Cold-chain alerts</h1>
           <p className="muted">
             Nimbus Freight · default range {min}–{max} °C · alert after {alert_after_min} min out of
-            range ·
-            data as of {hhmm(report.evaluated_at)} UTC · refreshes every 20 s
+            range
           </p>
         </div>
         {"Notification" in window && Notification.permission === "default" && (
@@ -183,16 +182,6 @@ export default function App() {
 
       <TruckRanges refreshKey={report} onChanged={() => void load()} />
 
-      <section>
-        <h2>Notifications sent to ops ({report.notifications.length})</h2>
-        <ul className="notes">
-          {report.notifications.map((n) => (
-            <li key={n.notification_id} className={newIds.includes(n.notification_id) ? "new" : ""}>
-              <span className="muted">{hhmm(n.at)}</span> {n.message}
-            </li>
-          ))}
-        </ul>
-      </section>
     </main>
   );
 }
