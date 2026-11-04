@@ -1,4 +1,5 @@
 """The only data the LLM ever sees: numbers about one alert. No customer or cargo details."""
+
 from __future__ import annotations
 
 from typing import Any

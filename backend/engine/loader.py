@@ -1,8 +1,5 @@
-"""Turn raw sensor JSON into clean, per-truck, time-sorted readings.
+"""Validate raw readings, drop duplicates and sort each truck's readings by sensor time."""
 
-File order means nothing: trucks lose signal and upload in bursts, so readings are
-always sorted by sensor timestamp before any rule runs (T-05 in the seed data).
-"""
 from __future__ import annotations
 
 import json
@@ -79,8 +76,7 @@ def parse_reading(raw: Any) -> Reading:
     if not _is_number(temperature):
         raise ValueError("temperature_c is missing or not a number")
 
-    # Humidity never drives alerts, so a bad value is dropped rather than losing the
-    # temperature reading with it.
+    # humidity doesn't drive alerts, so don't lose the temperature over a bad value
     humidity = raw.get("humidity_pct")
     if not (_is_number(humidity) and 0 <= humidity <= 100):
         humidity = None

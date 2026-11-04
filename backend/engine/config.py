@@ -1,8 +1,5 @@
-"""Every alerting threshold in one place.
+"""Alerting thresholds. Reasons for each default: docs/ASSUMPTIONS.md."""
 
-The reasons behind each default are in docs/ASSUMPTIONS.md. Change numbers here,
-never in the engine code.
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -10,42 +7,33 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True, slots=True)
 class AlertConfig:
-    # Cargo profile this config belongs to (per-truck ranges: backend/profiles.py).
+    # "default" or "custom" (a truck's own range)
     profile: str = "pharma"
-    # Safe range for the cargo (2-8 °C: refrigerated pharma, the strictest Nimbus cargo).
+    # 2-8 °C: refrigerated pharma, the strictest cargo
     min_safe_c: float = 2.0
     max_safe_c: float = 8.0
 
-    # Out of range this long (by sensor timestamps) before we alert.
     alert_after_min: float = 20.0
 
-    # Back in range this long since the last out-of-range reading, seen by at least this
-    # many in-range readings, before a truck counts as normal again.
+    # back in range this long, over at least this many readings, before it counts as normal
     clear_after_min: float = 10.0
     clear_min_readings: int = 2
 
-    # An open alert becomes Critical when the episode lasts this long or the worst reading
-    # is this far outside the safe range.
     critical_after_min: float = 60.0
     critical_excess_c: float = 3.0
 
-    # While a Warning alert stays out of range, check every this many minutes whether the
-    # temperature has moved back toward the safe range by at least improve_min_c. If not,
-    # send one "not improving" update. More than sensor jitter (0.1-0.2 °C).
+    # "not improving" check; 0.3 °C is above normal sensor jitter
     update_every_min: float = 10.0
     improve_min_c: float = 0.3
 
-    # Normal reading cadence; a gap over 1.5x this is reported as missing data.
+    # gaps over 1.5x this are reported as missing data
     expected_interval_min: float = 5.0
 
-    # A gap longer than this is a "sensor silent" period. It is only bridged inside an
-    # episode when the readings on both sides are out of range.
     silent_after_min: float = 15.0
-    # Notify about a silence after this long (or right at silent_after_min if the truck
-    # was already out of range when it went quiet).
+    # a truck that was already out of range is notified at silent_after_min instead
     silent_notify_min: float = 30.0
 
-    # Readings outside this range are physically impossible for a reefer: sensor fault.
+    # outside these limits = sensor fault
     sensor_min_c: float = -40.0
     sensor_max_c: float = 50.0
 

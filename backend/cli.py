@@ -1,9 +1,10 @@
 """Command line: "here's what I'd alert on, and why".
 
-    .\\.venv\\Scripts\\python -m backend.cli                       # seed data
-    .\\.venv\\Scripts\\python -m backend.cli path\\to\\readings.json --json
-    .\\.venv\\Scripts\\python -m backend.cli --alert-after-min 25   # try another limit
+.\\.venv\\Scripts\\python -m backend.cli                       # seed data
+.\\.venv\\Scripts\\python -m backend.cli path\\to\\readings.json --json
+.\\.venv\\Scripts\\python -m backend.cli --alert-after-min 25   # try another limit
 """
+
 from __future__ import annotations
 
 import argparse

@@ -1,4 +1,5 @@
 """Send each notification once. A failed send is logged and retried on the next run."""
+
 from __future__ import annotations
 
 import logging
@@ -13,7 +14,6 @@ from backend.settings import Settings
 
 log = logging.getLogger(__name__)
 
-# Optional hook for the AI summary (feature 4). Returns None to use the plain message.
 Summarizer = Callable[[Notification], str | None]
 
 

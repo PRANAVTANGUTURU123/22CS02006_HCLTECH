@@ -1,9 +1,5 @@
-"""AI alert summary: the rules decide, the LLM only words the message.
+"""LLM wording for alerts. The output is checked; if anything is off, the plain message is used."""
 
-The answer is checked before use: it must name the right truck, be short, and contain
-no time or number that isn't in the facts. Any failure returns None, and the plain
-rule-based message is sent instead. One LLM call per notification (cached).
-"""
 from __future__ import annotations
 
 import json

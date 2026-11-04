@@ -1,4 +1,5 @@
 """Deliver engine notifications: console by default, Discord/Slack webhook if configured."""
+
 from backend.notify.dispatcher import (
     DispatchResult,
     InMemorySentStore,

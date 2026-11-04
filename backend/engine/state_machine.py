@@ -1,22 +1,8 @@
 """Per-truck state machine: OK -> SUSPECT -> ALERT -> RECOVERING -> OK.
 
-Rules (reasons in docs/ASSUMPTIONS.md):
-- An episode starts at the first out-of-range reading. Its duration is measured from
-  sensor timestamps (first to latest out-of-range reading), never from reading counts.
-- The alert opens once the episode reaches alert_after_min. One notification.
-- The truck is normal again only after clear_after_min in range since the last
-  out-of-range reading, seen by clear_min_readings in-range readings. A single dip just
-  under the limit neither resets the timer (SUSPECT) nor closes the alert (RECOVERING).
-- A gap longer than silent_after_min is a sensor silence. Inside an episode it is only
-  bridged when the readings on both sides are out of range; otherwise a SUSPECT timer
-  resets. An open alert never closes because of missing data, only on confirmed
-  in-range readings.
-- The alert becomes Critical at critical_after_min or critical_excess_c past the limit,
-  with at most one extra notification.
-- Until then, every update_every_min while still out of range, the reading is compared with
-  the one at the previous check. If it hasn't moved back toward the safe range by at least
-  improve_min_c, one "not improving" update is sent. No timed repeats: the data decides.
+The rules and the reasons for each number are in docs/ASSUMPTIONS.md.
 """
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -99,15 +85,13 @@ class FleetReport:
 
 
 def _alert_message(alert: Alert) -> str:
-    # e.g. "WARNING: Truck T-04 above 8 °C for 20 min (08:25–08:45), peak 9.1 °C. ..."
     reason = alert.reason()
     return f"{alert.severity.upper()}: Truck {alert.truck_id} {reason[0].lower()}{reason[1:]}"
 
 
 def _is_critical(ep: _Episode, config: AlertConfig) -> bool:
     return (
-        ep.duration_min >= config.critical_after_min
-        or ep.peak_excess >= config.critical_excess_c
+        ep.duration_min >= config.critical_after_min or ep.peak_excess >= config.critical_excess_c
     )
 
 
@@ -263,7 +247,7 @@ def evaluate_truck(
                     and reading.timestamp >= ep.next_check_at
                 ):
                     ref = ep.check_ref
-                    # Rounded: 9.6 -> 9.3 must count as 0.3, not 0.29999...
+                    # 9.6 -> 9.3 must count as 0.3, not 0.2999...
                     improved_by = round(config.excess_c(ref.temperature_c) - excess, 6)
                     if improved_by < config.improve_min_c:
                         alert.updates_sent += 1
@@ -284,8 +268,7 @@ def evaluate_truck(
                                 alert_id=alert.alert_id,
                             )
                         )
-                    # Next check a full interval after this one, so a late check after a
-                    # gap is never followed by one only minutes later.
+                    # from this check, so a late check after a gap isn't followed by another
                     ep.check_ref = reading
                     ep.next_check_at = reading.timestamp + timedelta(
                         minutes=config.update_every_min

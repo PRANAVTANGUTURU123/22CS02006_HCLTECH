@@ -1,4 +1,5 @@
 """Data shapes used by the engine. Plain dataclasses, no I/O."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

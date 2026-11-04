@@ -1,4 +1,5 @@
 """Pure alerting engine: no network, files or database. See SOLUTION_DESIGN.md §5."""
+
 from backend.engine.config import DEFAULT_CONFIG, AlertConfig
 from backend.engine.loader import CleanData, clean_readings, load_raw_file
 from backend.engine.models import (

@@ -1,4 +1,5 @@
 """Optional AI wording for alerts. Never decides whether to alert."""
+
 from __future__ import annotations
 
 import httpx

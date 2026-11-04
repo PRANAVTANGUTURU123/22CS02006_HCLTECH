@@ -1,4 +1,5 @@
 """Tiny synchronous LLM clients: mock, Groq (OpenAI-compatible) and Gemini, over httpx."""
+
 from __future__ import annotations
 
 import json
@@ -8,7 +9,6 @@ from typing import Any, Protocol
 
 import httpx
 
-# httpx logs request lines at INFO; keep it quiet (see backend/notify/senders.py).
 for _noisy in ("httpx", "httpcore"):
     logging.getLogger(_noisy).setLevel(logging.WARNING)
 

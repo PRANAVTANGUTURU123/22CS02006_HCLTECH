@@ -21,7 +21,7 @@ export interface Truck {
   last_temperature_c: number | null;
   last_humidity_pct: number | null;
   open_alert_id: string | null;
-  profile: string;
+  profile: "default" | "custom";
   min_safe_c: number;
   max_safe_c: number;
   alert_after_min: number;
@@ -80,15 +80,23 @@ export interface TruckDetail extends Truck {
   alerts: Alert[];
 }
 
-export interface Profile {
-  name: string;
+export interface RangeValues {
   min_safe_c: number;
   max_safe_c: number;
   alert_after_min: number;
 }
 
-export interface Profiles {
-  default: string;
-  profiles: Profile[];
-  assignments: Record<string, string>;
+export interface TruckRange {
+  truck_id: string;
+  min_safe_c: number | null; // null = not set yet, the default applies
+  max_safe_c: number | null;
+  alert_after_min: number | null;
+  custom: boolean;
+  added_at: string | null; // when the truck was first added to the database
+  effective: RangeValues;
+}
+
+export interface Ranges {
+  default: RangeValues;
+  trucks: TruckRange[];
 }

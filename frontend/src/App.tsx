@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchReport, fetchTruck, hhmm } from "./api";
-import { CargoRanges } from "./CargoRanges";
+import { TruckRanges } from "./TruckRanges";
 import { TempChart } from "./TempChart";
 import type { Alert, Report, TruckDetail } from "./types";
 
@@ -139,7 +139,8 @@ export default function App() {
                   {t.silent && <span className="badge silent">Sensor silent</span>}
                 </td>
                 <td>
-                  {t.profile} <span className="muted">{t.min_safe_c} to {t.max_safe_c} °C</span>
+                  {t.min_safe_c} to {t.max_safe_c} °C{" "}
+                  <span className="muted small">{t.profile === "custom" ? "own" : "default"}</span>
                 </td>
                 <td>
                   {t.last_temperature_c?.toFixed(1) ?? "–"} °C at {hhmm(t.last_reading_at)}
@@ -158,7 +159,8 @@ export default function App() {
           <h2>
             {detail.truck_id} temperature{" "}
             <span className="muted small">
-              ({detail.profile}: {detail.min_safe_c} to {detail.max_safe_c} °C)
+              ({detail.profile === "custom" ? "own range" : "default range"}: {detail.min_safe_c} to{" "}
+              {detail.max_safe_c} °C)
             </span>
           </h2>
           <TempChart truck={detail} min={detail.min_safe_c} max={detail.max_safe_c} />
@@ -179,7 +181,7 @@ export default function App() {
         )}
       </section>
 
-      <CargoRanges trucks={report.trucks} onChanged={() => void load()} />
+      <TruckRanges refreshKey={report} onChanged={() => void load()} />
 
       <section>
         <h2>Notifications sent to ops ({report.notifications.length})</h2>

@@ -1,4 +1,5 @@
 """Remember which notifications were sent, across restarts (SQLAlchemy, portable SQL)."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime

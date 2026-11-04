@@ -1,4 +1,5 @@
 """The JSON body we POST to the webhook."""
+
 from __future__ import annotations
 
 from typing import Any

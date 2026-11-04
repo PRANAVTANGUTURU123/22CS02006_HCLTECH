@@ -16,7 +16,6 @@ from pydantic import BaseModel, Field
 from backend.ai import Summarizer, facts_by_notification, llm_from_settings
 from backend.engine import DEFAULT_CONFIG, AlertConfig, FleetReport, load_raw_file
 from backend.notify import Sender, SentStore, dispatch, sender_from_settings
-from backend.profiles import ProfileStore
 from backend.report import (
     alert_to_dict,
     evaluate_raw,
@@ -26,36 +25,40 @@ from backend.report import (
 )
 from backend.settings import Settings, get_settings
 from backend.store import SqlSentStore, make_engine
+from backend.trucks import TruckRange, TruckRegistry
 
 log = logging.getLogger(__name__)
 
 
+class TruckRangeIn(BaseModel):
+    """A truck's own safe range. Both limits null = use the default range."""
+
+    min_safe_c: float | None = Field(default=None, ge=-60, le=60)
+    max_safe_c: float | None = Field(default=None, ge=-60, le=60)
+    alert_after_min: float | None = Field(default=None, gt=0, le=1440)
+
+
+class NewTruck(TruckRangeIn):
+    truck_id: str = Field(min_length=1, max_length=64)
+
+
 class ReadingsUpload(BaseModel):
-    # Each reading is validated by the engine's loader, which rejects bad ones one by one
-    # with a reason instead of failing the whole batch.
+    # validated one by one by the loader, so one bad reading doesn't fail the batch
     readings: list[dict[str, Any]] = Field(min_length=1)
     replace: bool = False  # true = start over with only these readings
-
-
-class ProfileIn(BaseModel):
-    min_safe_c: float = Field(ge=-60, le=60)
-    max_safe_c: float = Field(ge=-60, le=60)
-    alert_after_min: float = Field(default=20, gt=0, le=1440)
-
-
-class AssignIn(BaseModel):
-    profile: str = Field(min_length=1, max_length=32)
+    # ranges for new trucks; never overwrites one already set
+    trucks: list[NewTruck] = Field(default_factory=list, max_length=1000)
 
 
 class Fleet:
     """Current readings, the latest report and AI summaries. Thread-safe."""
 
     def __init__(
-        self, raw: list[Any], config: AlertConfig, summarizer_llm, config_for=None
+        self, raw: list[Any], config: AlertConfig, summarizer_llm, registry: TruckRegistry
     ) -> None:
         self._lock = threading.Lock()
         self._config = config
-        self._config_for = config_for
+        self._registry = registry
         self._llm = summarizer_llm
         self._summarizer: Summarizer | None = None
         self.raw: list[Any] = []
@@ -64,7 +67,8 @@ class Fleet:
         self.replace(raw)
 
     def _refresh(self) -> None:
-        self.report = evaluate_raw(self.raw, self._config, config_for=self._config_for)
+        self.report = evaluate_raw(self.raw, self._config, config_for=self._registry.config_for)
+        self._registry.register(list(self.report.clean.by_truck))
         facts = facts_by_notification(self.report)
         old_cache = self._summarizer._cache if self._summarizer else {}
         self._summarizer = Summarizer(self._llm, facts)
@@ -82,7 +86,7 @@ class Fleet:
             self._refresh()
 
     def refresh(self) -> None:
-        """Re-evaluate after a profile change."""
+        """Re-evaluate after a range change."""
         with self._lock:
             self._refresh()
 
@@ -95,19 +99,19 @@ def create_app(
     sender: Sender | None = None,
     store: SentStore | None = None,
     llm=None,
-    profiles: ProfileStore | None = None,
+    registry: TruckRegistry | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     sender = sender or sender_from_settings(settings)
     db = (
         make_engine(settings.database_url.get_secret_value())
-        if store is None or profiles is None
+        if store is None or registry is None
         else None
     )
     store = store or SqlSentStore(db)
-    profiles = profiles or ProfileStore(db, settings.default_profile)
+    registry = registry or TruckRegistry(db, DEFAULT_CONFIG)
     llm = llm or llm_from_settings(settings)
-    fleet = Fleet(load_raw_file(settings.readings_path), DEFAULT_CONFIG, llm, profiles.config_for)
+    fleet = Fleet(load_raw_file(settings.readings_path), DEFAULT_CONFIG, llm, registry)
 
     app = FastAPI(title="Cold-Chain Alerting", version="1.0.0")
     app.state.fleet = fleet
@@ -186,6 +190,15 @@ def create_app(
     def upload(body: ReadingsUpload) -> dict[str, Any]:
         if len(body.readings) > settings.max_upload_readings:
             raise HTTPException(413, f"at most {settings.max_upload_readings} readings per upload")
+        ranges_set = []
+        for t in body.trucks:
+            existing = registry.get(t.truck_id)
+            if existing is None or not (existing.is_custom or existing.alert_after_min):
+                try:
+                    registry.set_range(t.truck_id, t.min_safe_c, t.max_safe_c, t.alert_after_min)
+                except ValueError as exc:
+                    raise HTTPException(422, f"{t.truck_id}: {exc}") from None
+                ranges_set.append(t.truck_id)
         if body.replace:
             fleet.replace(body.readings)
         else:
@@ -200,44 +213,47 @@ def create_app(
             "alerts": len(fleet.report.alerts),
             "sent": [r.notification_id for r in results if r.status == "sent"],
             "failed": [r.notification_id for r in results if r.status == "failed"],
+            "ranges_set": ranges_set,
         }
 
-    def profiles_view() -> dict[str, Any]:
+    def range_dict(row: TruckRange) -> dict[str, Any]:
+        cfg = registry.config_for(row.truck_id)
         return {
-            "default": profiles.default_profile,
-            "profiles": [
-                {
-                    "name": name,
-                    "min_safe_c": cfg.min_safe_c,
-                    "max_safe_c": cfg.max_safe_c,
-                    "alert_after_min": cfg.alert_after_min,
-                }
-                for name, cfg in sorted(profiles.profiles().items())
-            ],
-            "assignments": profiles.assignments(),
+            "truck_id": row.truck_id,
+            "min_safe_c": row.min_safe_c,  # null = not set, default applies
+            "max_safe_c": row.max_safe_c,
+            "alert_after_min": row.alert_after_min,
+            "custom": row.is_custom,
+            "added_at": row.first_seen_at.isoformat() if row.first_seen_at else None,
+            "effective": {
+                "min_safe_c": cfg.min_safe_c,
+                "max_safe_c": cfg.max_safe_c,
+                "alert_after_min": cfg.alert_after_min,
+            },
         }
 
-    @app.get("/api/profiles")
-    def get_profiles() -> dict[str, Any]:
-        return profiles_view()
+    @app.get("/api/ranges")
+    def ranges() -> dict[str, Any]:
+        d = registry.default
+        return {
+            "default": {
+                "min_safe_c": d.min_safe_c,
+                "max_safe_c": d.max_safe_c,
+                "alert_after_min": d.alert_after_min,
+            },
+            "trucks": [range_dict(r) for r in registry.all()],
+        }
 
-    @app.put("/api/profiles/{name}", dependencies=[Depends(require_key)])
-    def put_profile(name: str, body: ProfileIn) -> dict[str, Any]:
+    @app.put("/api/trucks/{truck_id}/range", dependencies=[Depends(require_key)])
+    def put_range(truck_id: str, body: TruckRangeIn) -> dict[str, Any]:
         try:
-            profiles.upsert_profile(name, body.min_safe_c, body.max_safe_c, body.alert_after_min)
+            row = registry.set_range(
+                truck_id, body.min_safe_c, body.max_safe_c, body.alert_after_min
+            )
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from None
         fleet.refresh()
-        return profiles_view()
-
-    @app.put("/api/trucks/{truck_id}/profile", dependencies=[Depends(require_key)])
-    def put_truck_profile(truck_id: str, body: AssignIn) -> dict[str, Any]:
-        try:
-            profiles.assign(truck_id, body.profile)
-        except ValueError as exc:
-            raise HTTPException(422, str(exc)) from None
-        fleet.refresh()
-        return profiles_view()
+        return range_dict(row)
 
     @app.post("/api/reset", dependencies=[Depends(require_key)])
     def reset() -> dict[str, int]:

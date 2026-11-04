@@ -2,6 +2,7 @@
 
 Shared by the CLI (--json), the API and the MCP server so they always agree.
 """
+
 from __future__ import annotations
 
 from collections.abc import Callable

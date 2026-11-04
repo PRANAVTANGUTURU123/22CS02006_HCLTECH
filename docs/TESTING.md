@@ -1,6 +1,6 @@
 # Testing & Verification
 
-**201 automated tests**: 194 Python (97% line coverage), 5 frontend and 2 end-to-end browser tests. On top of those, static checks, dependency audits and live checks against the real Discord and Groq. **No automated test touches the network:** `tests/conftest.py` forces the webhook off and the LLM to mock mode, even if `.env` holds real keys.
+**203 automated tests**: 195 Python (97% line coverage), 6 frontend and 2 end-to-end browser tests. On top of those, static checks, dependency audits and live checks against the real Discord and Groq. **No automated test touches the network:** `tests/conftest.py` forces the webhook off and the LLM to mock mode, even if `.env` holds real keys.
 
 ## How to run
 
@@ -65,12 +65,13 @@ cd frontend; npm run typecheck; npm test; npm run build; cd ..       # types, UI
   - The history window is capped (0, −5 and 1441 minutes are refused); an unknown truck is refused, including an SQL-injection-style string.
 - **`frontend/src/App.test.tsx` (3):** the dashboard component with the API mocked. It checks the banner, state badges, reasons, the **labelled AI summary**, the chart on click, and the error message when the API is down.
 
-### Cargo profiles (`test_profiles.py`, 16: unit + integration)
-- Presets are added on first start; **a never-seen truck gets the default `pharma` 2–8 °C**; assign and unassign; custom profiles; settings survive a restart.
-- Refused: a bad name, min above max, a range outside the sensor limits, a zero alert time, an unknown profile, an over-long truck id.
-- The same −10 °C reading is "too warm" for frozen and "too cold" for pharma.
-- Through the API: assigning T-03 to `chilled` immediately creates an "Above 5 °C" alert; widening `pharma` to 9.7 °C clears all alerts; writes without the key get 401; bad input gets 422.
-- UI tests: the panel lists profiles with the default marked, sends the admin key in the header, and shows "Wrong or missing admin key" on a 401.
+### Truck ranges (`test_truck_ranges.py`, 17: unit + integration)
+- **A new truck is registered with an empty range and uses the default**, only the first time; it is registered with the time it was added. An unknown truck also gets the default.
+- Fill a range in later and clear it; set the alert time alone; ranges survive a restart.
+- Refused: min above max, only one limit given, a range outside the sensor limits, a zero alert time, an over-long truck id.
+- The same −10 °C reading is "too warm" for a frozen truck and "too cold" for a pharma truck.
+- Through the API: the seed trucks are registered with empty ranges; giving T-03 a 0–5 °C range immediately creates an "Above 5 °C" alert, and clearing it removes the alert; a new truck in an upload is registered and can bring its own range; **an upload never overwrites a range ops already set**; writes without the key get 401; bad input gets 422.
+- UI tests: the panel lists every registered truck, shows an empty range as "not set (default 2 to 8 °C)", shows the time each was added, sends the admin key in the header, and shows "Wrong or missing admin key" on a 401.
 
 ### End-to-end tests (2)
 

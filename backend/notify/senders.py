@@ -1,4 +1,5 @@
 """Where notifications go. Swap senders without touching the engine."""
+
 from __future__ import annotations
 
 import logging
@@ -15,8 +16,7 @@ from tenacity import (
 
 log = logging.getLogger(__name__)
 
-# httpx logs every request URL at INFO. A webhook URL *is* the secret (its token is in the
-# path), so keep httpx/httpcore quiet below WARNING. Found by test_notify's log check.
+# The webhook token is part of the URL, and httpx logs request URLs at INFO.
 for _noisy in ("httpx", "httpcore"):
     logging.getLogger(_noisy).setLevel(logging.WARNING)
 
@@ -84,7 +84,6 @@ class WebhookSender:
         if status == 429 or status >= 500:
             raise _Retryable(f"HTTP {status}")
         if status >= 400:
-            # Bad or revoked webhook: retrying won't help.
             raise SendError(f"webhook rejected the message (HTTP {status})")
 
     def send(self, payload: dict[str, Any]) -> None:

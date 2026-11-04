@@ -93,15 +93,17 @@ cd frontend; npm install; npm run build; cd ..
 | `GET /api/alerts?status=open\|recovering\|closed` | Alerts with reasons |
 | `POST /api/readings` | Upload `{"readings": [...], "replace": false}`. Re-evaluates and pushes new notifications once. Max 5,000 readings / 2 MB. |
 | `POST /api/reset` | Reload the seed data (demo) |
-| `GET /api/profiles`, `PUT /api/profiles/{name}`, `PUT /api/trucks/{id}/profile` | Cargo ranges per truck (writes need `X-API-Key`) |
+| `GET /api/ranges`, `PUT /api/trucks/{id}/range` | Each truck's own range; empty = default (writes need `X-API-Key`) |
 
 Sent notification ids are stored through SQLAlchemy (PostgreSQL via `DATABASE_URL`, otherwise a local SQLite file), so a restart never resends. The page refreshes every 20 s and shows a banner (and an optional desktop popup) when a new alert arrives.
 
-### Cargo ranges per truck (no code changes)
+### Each truck's own range (no code changes)
 
-The dashboard's **Cargo ranges** panel lists the profiles (`pharma` 2–8 °C is the default, `chilled` 0–5, `frozen` −25 to −18, `ambient` 15–25) and which trucks use each one. With the admin key, ops can **assign a truck to a profile** or **add or edit a profile**, and the fleet is re-evaluated immediately. A truck with no assignment, including a brand-new truck, uses the default. Through the API: `GET /api/profiles`, `PUT /api/trucks/{id}/profile`, `PUT /api/profiles/{name}` (with an `X-API-Key` header).
+The first time a truck reports, it is **added to the database automatically with an empty range**, and an empty range means the default 2–8 °C applies, so a new truck is never unprotected. The dashboard's **Truck ranges** panel lists every registered truck with the time it was added. With the admin key, ops can fill in a truck's own range and alert time (quick-fill buttons for pharma, chilled, frozen and ambient), or press "Use default" to clear it. Alerts are re-checked immediately.
 
-Example: assign T-03 (5.8–7.0 °C) to `chilled` and it alerts ("Above 5 °C…"), because that temperature is fine for medicine but too warm for chilled food.
+Through the API: `GET /api/ranges`, `PUT /api/trucks/{id}/range` with `X-API-Key`, or send ranges for new trucks with an upload: `{"readings": [...], "trucks": [{"truck_id": "T-20", "min_safe_c": -25, "max_safe_c": -18}]}`. An upload never overwrites a range that is already set.
+
+Example: give T-03 (5.8–7.0 °C) the range 0–5 °C and it alerts ("Above 5 °C…"), because that temperature is fine for medicine but too warm for chilled food.
 
 ### Ask an AI assistant (MCP)
 
@@ -109,7 +111,7 @@ Example: assign T-03 (5.8–7.0 °C) to `chilled` and it alerts ("Above 5 °C…
 
 ## Tests
 
-**201 automated tests:** 194 Python (unit + integration), 5 frontend and 2 end-to-end in real Chrome. 97% Python coverage, plus live checks against Discord and Groq. Details, and what each level proves: **[docs/TESTING.md](docs/TESTING.md)**.
+**203 automated tests:** 195 Python (unit + integration), 6 frontend and 2 end-to-end in real Chrome. 97% Python coverage, plus live checks against Discord and Groq. Details, and what each level proves: **[docs/TESTING.md](docs/TESTING.md)**.
 
 ```powershell
 .\.venv\Scripts\python -m pytest                       # unit + integration
@@ -140,7 +142,7 @@ docs/             assumptions, testing, screenshots
 - **Batch, not streaming:** v1 evaluates a whole file. Live ingestion with late-data handling is designed (SOLUTION_DESIGN.md §4) but not built.
 - **The API keeps readings in memory** (the send-once ids are in the database). A restart reloads the seed file, and a multi-instance deployment would need readings in the database too.
 - **CLI `--send` remembers sent ids only for that run** (the API uses the database).
-- **Cargo profiles are per truck, set by ops**, not per shipment from a dispatch system.
+- **Ranges are per truck, set by ops**, not per shipment from a dispatch system.
 - **Sensor-fault readings** (< −40 / > 50 °C) are flagged and ignored but don't notify anyone yet.
 - **Viewing is open; changes need the admin key** (`X-API-Key`). There are no per-user logins yet; a real deployment would add SSO (e.g. an identity proxy in front of Cloud Run).
 - The MCP server reads the seed file, not readings uploaded to the running API.

@@ -1,11 +1,5 @@
-"""Read-only MCP server: lets an AI assistant answer "which trucks are in trouble right now?".
+"""Read-only MCP server for asking about the fleet. Run: python -m backend.mcp_server"""
 
-Run by an MCP client (Claude Code via .mcp.json, Claude Desktop, MCP Inspector):
-    .venv\\Scripts\\python -m backend.mcp_server
-
-Every answer comes from the same engine as the CLI and API. No tool can change, close or
-silence an alert. Inputs are checked: known truck ids only, history window capped.
-"""
 from __future__ import annotations
 
 from datetime import timedelta

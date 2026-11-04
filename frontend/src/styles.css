@@ -65,3 +65,6 @@ input, select { border: 1px solid var(--line); border-radius: 6px; padding: 6px 
 input[type="number"] { width: 110px; }
 button:disabled { opacity: 0.5; cursor: not-allowed; }
 .ok-text { color: var(--ok); }
+.presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.presets button { padding: 4px 8px; font-size: 0.8rem; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
