@@ -6,7 +6,7 @@ What's done, what's in progress, and what's verified. Update it every time a fea
 
 ## Current focus
 
-_None yet: waiting for the hackathon brief._
+Case Study 2, Cold-Chain Alerting Engine. Phase 1: analysis and SOLUTION_DESIGN.md.
 
 ## Features
 
@@ -31,6 +31,7 @@ _None yet: waiting for the hackathon brief._
 | Date | Decision | Why |
 |------|----------|-----|
 | 2026-11-04 | Removed the test starter app; kept dependencies, config and Azure scripts | Start the hackathon from a clean repo; old starter recoverable from commit `4d6f67c` |
+| 2026-11-04 | Brief received (Case Study 2, cold-chain alerting). Added brief and starter kit; removed `requirements-search.txt` and `scripts/` | No document search needed; Cloud Run is the primary deploy. Both recoverable from commit `452bf0f` |
 | 2026-11-04 | PostgreSQL instead of SQLite, via SQLAlchemy + `DATABASE_URL` | Concurrent writes and multi-instance scaling; SQLite remains a one-line fallback. Reused the existing local PostgreSQL 16 (works offline). Azure PostgreSQL not created yet (B1ms ≈ $0.0245/h in indiasouthcentral) |
 | 2026-11-04 | Live Azure app uses SQLite (`sqlite:////home/data/app.db`); local dev uses PostgreSQL; switch the cloud to Azure PostgreSQL only if needed | No cloud DB cost or setup risk for a single-instance demo; same SQLAlchemy code works on both, so the switch is a `DATABASE_URL` change |
 

@@ -20,8 +20,9 @@ node_modules/
 frontend/dist/
 *.tsbuildinfo
 
-# Local data
+# Local data (the case-study seed data is tracked on purpose)
 data/
+!starter_kit/data/
 *.db
 *.sqlite
 *.sqlite3
@@ -39,3 +40,7 @@ deploy/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Working notes and zip leftovers (not deliverables)
+HANDOFF.md
+__MACOSX/
